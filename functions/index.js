@@ -64,7 +64,7 @@ const buildOrderPayload = (orderId, type, customer, dateScheduled) => {
     metadata: { dateScheduled: dateScheduled ? new Date(dateScheduled).toISOString() : null },
   };
 };
-};
+
 
 // Rota equivalente ao onCall 'createPixOrder'
 app.post("/createPixOrder", async (req, res) => {
