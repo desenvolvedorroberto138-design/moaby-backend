@@ -98,12 +98,21 @@ app.post("/createPixOrder", async (req, res) => {
       }
     );
 
+    const firstQr = data.qr_codes?.[0] || {};
+    const qrCodeText = firstQr.text || firstQr.value || null;
+    const qrCodeImage =
+      firstQr.links?.find((l) => l.media === "image/png")?.href ||
+      firstQr.links?.find((l) => l.rel?.toUpperCase() === "QRCODE")?.href ||
+      firstQr.links?.find((l) => l.rel?.toUpperCase() === "SELF")?.href ||
+      firstQr.image_url ||
+      null;
+
     await db.collection("orders").doc(orderId).set(
       {
         pagbankOrderId: data.id,
         status: data.status || "pending",
-        qrCode: data.qr_codes?.[0]?.text || null,
-        qrCodeImage: data.qr_codes?.[0]?.links?.find((l) => l.media === "image/png")?.href || null,
+        qrCode: qrCodeText,
+        qrCodeImage,
         updatedAt: new Date(),
       },
       { merge: true }
@@ -114,8 +123,8 @@ app.post("/createPixOrder", async (req, res) => {
       orderId,
       pagbankOrderId: data.id,
       status: data.status,
-      qrCode: data.qr_codes?.[0]?.text || null,
-      qrCodeImage: data.qr_codes?.[0]?.links?.find((l) => l.media === "image/png")?.href || null,
+      qrCode: qrCodeText,
+      qrCodeImage,
     });
   } catch (err) {
     const details = err.response?.data || err.message;
