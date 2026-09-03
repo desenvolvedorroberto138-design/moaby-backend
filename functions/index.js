@@ -24,23 +24,37 @@ const PRICES = {
 const buildOrderPayload = (orderId, type, customer, dateScheduled) => {
   const amount = PRICES[type];
   if (!amount) throw new Error(`Serviço inválido: ${type}`);
+  
+  const cleanName = (customer?.name || "Aluno Moaby").replace(/[!@#$%^&*(),.?":{}|<>]/g, "");
+
   const items = [{
     reference_id: orderId,
     name: type,
     quantity: 1,
     unit_amount: Math.round(amount * 100),
   }];
+
   return {
     reference_id: orderId,
     customer: {
-      name: customer?.name || "Aluno Moaby",
-      email: customer?.email || "aluno@moaby.com",
+      name: cleanName || "Aluno Moaby",
+      email: customer?.email || "[email protected]",
       tax_id: customer?.taxId || "11111111111",
     },
     items,
-    shipping: { address: { country: "BRA" } },
+    shipping: {
+      address: {
+        street: "Rua Principal",
+        number: "123",
+        locality: "Centro",
+        city: "Sao Paulo",
+        region_code: "SP",
+        country: "BRA",
+        postal_code: "01001000"
+      }
+    },
     notification_urls: [
-      "https://moaby-backend.onrender.com/pagbankWebhook", // Atualize com sua URL do Render depois se precisar
+      "https://moaby-backend.onrender.com/pagbankWebhook",
     ],
     payment_method: {
       type: "CHECKOUT_PIX",
@@ -49,6 +63,7 @@ const buildOrderPayload = (orderId, type, customer, dateScheduled) => {
     },
     metadata: { dateScheduled: dateScheduled ? new Date(dateScheduled).toISOString() : null },
   };
+};
 };
 
 // Rota equivalente ao onCall 'createPixOrder'
