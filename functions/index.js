@@ -13,7 +13,7 @@ app.use(express.json());
 
 // Pega o token direto da variável de ambiente configurada no Render
 const PAGBANK_TOKEN = process.env.PAGBANK_TOKEN;
-const PAGBANK_BASE_URL = "https://api.pagseguro.com";
+const PAGBANK_BASE_URL = "https://sandbox.api.pagseguro.com";
 
 const PRICES = {
   "Plano de Treino Online": 149.9,
