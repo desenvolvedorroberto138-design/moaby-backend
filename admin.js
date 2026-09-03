@@ -56,16 +56,26 @@ async function loadOrders() {
       return;
     }
     ordersTable.innerHTML = "";
-    snap.forEach((doc) => {
-      const o = doc.data();
+    snap.forEach((docSnap) => {
+      const o = docSnap.data();
+      const orderId = docSnap.id;
       const tr = document.createElement("tr");
-      tr.className = "border-b";
+      tr.className = "border-b hover:bg-slate-50/50 transition";
+
+      let statusBadge = `<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">Pendente</span>`;
+      if (o.status === "paid") {
+        statusBadge = `<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">Pago ✅</span>`;
+      } else if (o.status === "cancelled") {
+        statusBadge = `<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">Cancelado</span>`;
+      }
+
       tr.innerHTML = `
-        <td class="py-2">${o.userEmail || o.userId}</td>
-        <td class="py-2">${o.type}</td>
-        <td class="py-2"><span class="px-2 py-1 rounded-full text-xs bg-amber-100 text-amber-800">${o.status}</span></td>
-        <td class="py-2">${o.dateScheduled?.toDate ? o.dateScheduled.toDate().toLocaleString("pt-BR") : "-"}</td>
-        <td class="py-2">${o.createdAt?.toDate ? o.createdAt.toDate().toLocaleString("pt-BR") : "-"}</td>`;
+        <td class="py-3 font-medium text-slate-700">${o.userEmail || o.userId}</td>
+        <td class="py-3 text-slate-600">${o.type || 'Serviço'}</td>
+        <td class="py-3">${statusBadge}</td>
+        <td class="py-3 text-slate-500">${o.dateScheduled?.toDate ? o.dateScheduled.toDate().toLocaleString("pt-BR") : "-"}</td>
+        <td class="py-3 text-slate-500">${o.createdAt?.toDate ? o.createdAt.toDate().toLocaleString("pt-BR") : "-"}</td>`;
+
       ordersTable.appendChild(tr);
     });
   } catch (err) {
