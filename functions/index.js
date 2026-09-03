@@ -1,11 +1,21 @@
 const express = require("express");
-const { initializeApp } = require("firebase-admin/app");
-const { getFirestore } = require("firebase-admin/firestore");
+const admin = require("firebase-admin");
 const axios = require("axios");
 const cors = require("cors");
 
-initializeApp();
-const db = getFirestore();
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    projectId: "moabyconsultoria"
+  });
+} else {
+  admin.initializeApp({
+    projectId: "moabyconsultoria"
+  });
+}
+
+const db = admin.firestore();
 
 const app = express();
 app.use(cors({ origin: true }));
@@ -115,7 +125,7 @@ app.post("/createPixOrder", async (req, res) => {
 });
 
 // Rota equivalente ao onRequest 'pagbankWebhook'
-app.post("/pagbankWebhook", async (req, res) => {
+app.all("/pagbankWebhook", async (req, res) => {
   try {
     const notifications = Array.isArray(req.body) ? req.body : [req.body];
     for (const n of notifications) {
