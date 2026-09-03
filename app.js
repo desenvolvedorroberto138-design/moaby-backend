@@ -1,4 +1,4 @@
-import { auth, db, functions } from "./firebase.js";
+import { auth, db } from "./firebase.js"; // Removido 'functions' daqui
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -11,7 +11,7 @@ import {
   addDoc,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
+// Removida a importação do firebase-functions
 
 const authSection = document.getElementById("authSection");
 const servicesSection = document.getElementById("servicesSection");
@@ -31,7 +31,8 @@ const regName = document.getElementById("regName");
 const regEmail = document.getElementById("regEmail");
 const regPassword = document.getElementById("regPassword");
 
-const createPixOrder = httpsCallable(functions, "createPixOrder");
+// URL do seu backend hospedado no Render
+const RENDER_BACKEND_URL = "https://moaby-backend.onrender.com";
 
 document.getElementById("loginBtn").addEventListener("click", async () => {
   authMsg.textContent = "";
@@ -118,19 +119,33 @@ document.querySelectorAll(".buyBtn").forEach((btn) => {
         createdAt: serverTimestamp()
       });
 
-      const result = await createPixOrder({
-        orderId: orderRef.id,
-        type,
-        customer: {
-          name: user.displayName || "Aluno Moaby",
-          email: user.email,
+      // Substituído o httpsCallable por uma requisição fetch padrão para o Render
+      const response = await fetch(`${RENDER_BACKEND_URL}/createPixOrder`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-        dateScheduled,
+        body: JSON.stringify({
+          orderId: orderRef.id,
+          type,
+          customer: {
+            name: user.displayName || "Aluno Moaby",
+            email: user.email,
+          },
+          dateScheduled,
+        }),
       });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Erro ao comunicar com o servidor de pagamento.");
+      }
 
       buyMsg.className = "text-sm mt-4 text-emerald-700";
       buyMsg.textContent = `Pedido criado: ${type}. Pague o PIX para confirmar.`;
-      showPixModal({ ...result.data, orderId: orderRef.id });
+      
+      // Passamos diretamente o objeto retornado pelo servidor Express
+      showPixModal({ ...result, orderId: orderRef.id });
     } catch (err) {
       buyMsg.className = "text-sm mt-4 text-red-600";
       buyMsg.textContent = err.message || "Erro ao processar pagamento.";
