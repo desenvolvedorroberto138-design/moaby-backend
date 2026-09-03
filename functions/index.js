@@ -39,7 +39,7 @@ const buildOrderPayload = (orderId, type, customer, dateScheduled) => {
     customer: {
       name: cleanName || "Aluno Moaby",
       email: customer?.email || "[email protected]",
-      tax_id: customer?.taxId || "11111111111",
+      tax_id: "12345678909",
     },
     items,
     shipping: {
