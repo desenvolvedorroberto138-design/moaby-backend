@@ -37,13 +37,6 @@ const buildOrderPayload = (orderId, type, customer, dateScheduled) => {
   
   const cleanName = (customer?.name || "Aluno Moaby").replace(/[!@#$%^&*(),.?":{}|<>]/g, "");
 
-  const items = [{
-    reference_id: orderId,
-    name: type,
-    quantity: 1,
-    unit_amount: Math.round(amount * 100),
-  }];
-
   return {
     reference_id: orderId,
     customer: {
@@ -51,26 +44,21 @@ const buildOrderPayload = (orderId, type, customer, dateScheduled) => {
       email: customer?.email || "[email protected]",
       tax_id: "12345678909",
     },
-    items,
-    shipping: {
-      address: {
-        street: "Rua Principal",
-        number: "123",
-        locality: "Centro",
-        city: "Sao Paulo",
-        region_code: "SP",
-        country: "BRA",
-        postal_code: "01001000"
-      }
-    },
+    items: [{
+      reference_id: orderId,
+      name: type,
+      quantity: 1,
+      unit_amount: Math.round(amount * 100),
+    }],
+    qr_codes: [{
+      amount: {
+        value: Math.round(amount * 100)
+      },
+      expiration_date: new Date(Date.now() + 3600 * 1000).toISOString()
+    }],
     notification_urls: [
       "https://moaby-backend.onrender.com/pagbankWebhook",
     ],
-    payment_method: {
-      type: "CHECKOUT_PIX",
-      installments: 1,
-      capture: true,
-    },
     metadata: { dateScheduled: dateScheduled ? new Date(dateScheduled).toISOString() : null },
   };
 };
@@ -99,12 +87,10 @@ app.post("/createPixOrder", async (req, res) => {
     );
 
     const firstQr = data.qr_codes?.[0] || {};
-    const qrCodeText = firstQr.text || firstQr.value || null;
+    const qrCodeText = firstQr.text || firstQr.content || null;
     const qrCodeImage =
-      firstQr.links?.find((l) => l.media === "image/png")?.href ||
-      firstQr.links?.find((l) => l.rel?.toUpperCase() === "QRCODE")?.href ||
-      firstQr.links?.find((l) => l.rel?.toUpperCase() === "SELF")?.href ||
-      firstQr.image_url ||
+      firstQr.links?.find((l) => l.media === "image/png" || l.rel === "QRCODE")?.href ||
+      firstQr.links?.[0]?.href ||
       null;
 
     await db.collection("orders").doc(orderId).set(
