@@ -57,7 +57,7 @@ const buildOrderPayload = (orderId, type, customer, dateScheduled) => {
       expiration_date: new Date(Date.now() + 3600 * 1000).toISOString()
     }],
     notification_urls: [
-      "https://moaby-backend.onrender.com/pagbankWebhook",
+      "https://moaby-backend.onrender.com/webhook/pagbank",
     ],
     metadata: { dateScheduled: dateScheduled ? new Date(dateScheduled).toISOString() : null },
   };
@@ -119,40 +119,46 @@ app.post("/createPixOrder", async (req, res) => {
   }
 });
 
-// Rota equivalente ao onRequest 'pagbankWebhook'
-app.all("/pagbankWebhook", async (req, res) => {
+// Webhook do PagBank
+app.post("/webhook/pagbank", async (req, res) => {
   try {
-    const notifications = Array.isArray(req.body) ? req.body : [req.body];
-    for (const n of notifications) {
-      const orderId = n.reference_id || n.id;
-      if (!orderId) continue;
+    const notification = req.body;
+    const charge = notification.charges && notification.charges[0];
 
-      const { data } = await axios.get(
-        `${PAGBANK_BASE_URL}/orders/${orderId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${PAGBANK_TOKEN}`,
-            Accept: "application/json",
-          },
-          timeout: 10000,
-        }
-      );
-
-      const status = data.status || "pending";
-      await db.collection("orders").doc(orderId).set(
-        {
-          status,
-          charges: data.charges || null,
-          paidAt: status === "PAID" ? new Date() : null,
-          updatedAt: new Date(),
-        },
-        { merge: true }
-      );
+    if (!charge) {
+      return res.status(400).send({ error: "Nenhuma cobrança encontrada" });
     }
-    return res.status(200).send("OK");
-  } catch (err) {
-    console.error("Webhook error", err.response?.data || err.message);
-    return res.status(200).send("OK");
+
+    const orderId = notification.reference_id || charge.reference_id;
+    const paymentStatus = charge.status;
+
+    if (!orderId) {
+      return res.status(400).send({ error: "ID do pedido não identificado" });
+    }
+
+    let newStatus = "pending";
+    if (paymentStatus === "PAID" || paymentStatus === "AUTHORIZED") {
+      newStatus = "paid";
+    } else if (paymentStatus === "DECLINED" || paymentStatus === "CANCELED") {
+      newStatus = "cancelled";
+    }
+
+    const orderRef = db.collection("orders").doc(orderId);
+    const orderDoc = await orderRef.get();
+
+    if (!orderDoc.exists) {
+      return res.status(404).send({ error: "Pedido não encontrado" });
+    }
+
+    await orderRef.update({
+      status: newStatus,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return res.status(200).send({ success: true });
+  } catch (error) {
+    console.error("Erro no webhook:", error);
+    return res.status(500).send({ error: "Erro interno" });
   }
 });
 
