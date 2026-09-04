@@ -1,17 +1,10 @@
-import { auth, db } from "./firebase.js";
+import { auth } from "./firebase.js";
 import {
   signInWithEmailAndPassword,
   signOut,
-  onAuthStateChanged
+  onAuthStateChanged,
+  getIdToken
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {
-  collection,
-  addDoc,
-  getDocs,
-  query,
-  orderBy,
-  serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const loginSection = document.getElementById("loginSection");
 const dashboard = document.getElementById("dashboard");
@@ -19,6 +12,8 @@ const loginMsg = document.getElementById("loginMsg");
 const ordersTable = document.getElementById("ordersTable");
 const workoutsList = document.getElementById("workoutsList");
 const workoutMsg = document.getElementById("workoutMsg");
+
+const BACKEND_URL = "https://moaby-backend.onrender.com";
 
 document.getElementById("adminLoginBtn").addEventListener("click", async () => {
   loginMsg.textContent = "";
@@ -47,18 +42,31 @@ onAuthStateChanged(auth, (user) => {
   }
 });
 
+async function authHeaders() {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Não autenticado.");
+  const token = await getIdToken(user);
+  return {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${token}`
+  };
+}
+
 async function loadOrders() {
   ordersTable.innerHTML = `<tr><td colspan="5" class="py-3 text-slate-500">Carregando...</td></tr>`;
   try {
-    const snap = await getDocs(query(collection(db, "orders"), orderBy("createdAt", "desc")));
-    if (snap.empty) {
+    const res = await fetch(`${BACKEND_URL}/admin/orders`, { headers: await authHeaders() });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Erro ao carregar pedidos.");
+    }
+    const { orders } = await res.json();
+    if (!orders || orders.length === 0) {
       ordersTable.innerHTML = `<tr><td colspan="5" class="py-3 text-slate-500">Nenhum pedido.</td></tr>`;
       return;
     }
     ordersTable.innerHTML = "";
-    snap.forEach((docSnap) => {
-      const o = docSnap.data();
-      const orderId = docSnap.id;
+    orders.forEach((o) => {
       const tr = document.createElement("tr");
       tr.className = "border-b hover:bg-slate-50/50 transition";
 
@@ -69,12 +77,15 @@ async function loadOrders() {
         statusBadge = `<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">Cancelado</span>`;
       }
 
+      const dateScheduled = o.dateScheduled ? new Date(o.dateScheduled).toLocaleString("pt-BR") : "-";
+      const createdAt = o.createdAt ? new Date(o.createdAt).toLocaleString("pt-BR") : "-";
+
       tr.innerHTML = `
         <td class="py-3 font-medium text-slate-700">${o.userEmail || o.userId}</td>
         <td class="py-3 text-slate-600">${o.type || 'Serviço'}</td>
         <td class="py-3">${statusBadge}</td>
-        <td class="py-3 text-slate-500">${o.dateScheduled?.toDate ? o.dateScheduled.toDate().toLocaleString("pt-BR") : "-"}</td>
-        <td class="py-3 text-slate-500">${o.createdAt?.toDate ? o.createdAt.toDate().toLocaleString("pt-BR") : "-"}</td>`;
+        <td class="py-3 text-slate-500">${dateScheduled}</td>
+        <td class="py-3 text-slate-500">${createdAt}</td>`;
 
       ordersTable.appendChild(tr);
     });
@@ -88,12 +99,19 @@ document.getElementById("workoutForm").addEventListener("submit", async (e) => {
   workoutMsg.textContent = "Salvando...";
   workoutMsg.className = "ml-3 text-sm text-slate-600";
   try {
-    await addDoc(collection(db, "workouts"), {
-      userId: document.getElementById("workoutUserId").value,
-      title: document.getElementById("workoutTitle").value,
-      content: document.getElementById("workoutContent").value,
-      createdAt: serverTimestamp()
+      const res = await fetch(`${BACKEND_URL}/admin/workouts`, {
+        method: "POST",
+      headers: await authHeaders(),
+      body: JSON.stringify({
+        userId: document.getElementById("workoutUserId").value,
+        title: document.getElementById("workoutTitle").value,
+        content: document.getElementById("workoutContent").value,
+      }),
     });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Erro ao salvar ficha.");
+    }
     workoutMsg.textContent = "Ficha salva!";
     workoutMsg.className = "ml-3 text-sm text-emerald-700";
     e.target.reset();
@@ -107,19 +125,24 @@ document.getElementById("workoutForm").addEventListener("submit", async (e) => {
 async function loadWorkouts() {
   workoutsList.innerHTML = `<p class="text-slate-500 text-sm">Carregando...</p>`;
   try {
-    const snap = await getDocs(query(collection(db, "workouts"), orderBy("createdAt", "desc")));
-    if (snap.empty) {
+    const res = await fetch(`${BACKEND_URL}/admin/workouts`, { headers: await authHeaders() });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Erro ao carregar fichas.");
+    }
+    const { workouts } = await res.json();
+    if (!workouts || workouts.length === 0) {
       workoutsList.innerHTML = `<p class="text-slate-500 text-sm">Nenhuma ficha cadastrada.</p>`;
       return;
     }
     workoutsList.innerHTML = "";
-    snap.forEach((doc) => {
-      const w = doc.data();
+    workouts.forEach((w) => {
       const div = document.createElement("div");
       div.className = "border rounded-lg p-3";
+      const createdAt = w.createdAt ? new Date(w.createdAt).toLocaleString("pt-BR") : "";
       div.innerHTML = `
         <p class="font-medium">${w.title}</p>
-        <p class="text-xs text-slate-500">Aluno: ${w.userId} • ${w.createdAt?.toDate ? w.createdAt.toDate().toLocaleString("pt-BR") : ""}</p>
+        <p class="text-xs text-slate-500">Aluno: ${w.userId} • ${createdAt}</p>
         <pre class="whitespace-pre-wrap text-sm mt-2 text-slate-700">${w.content}</pre>`;
       workoutsList.appendChild(div);
     });

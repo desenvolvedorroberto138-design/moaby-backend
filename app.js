@@ -1,17 +1,17 @@
-import { auth, db } from "./firebase.js"; // Removido 'functions' daqui
+import { auth, db } from "./firebase.js";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
-  updateProfile
+  updateProfile,
+  getIdToken
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   collection,
   addDoc,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-// Removida a importação do firebase-functions
 
 const authSection = document.getElementById("authSection");
 const servicesSection = document.getElementById("servicesSection");
@@ -120,10 +120,12 @@ document.querySelectorAll(".buyBtn").forEach((btn) => {
       });
 
       // Substituído o httpsCallable por uma requisição fetch padrão para o Render
+      const token = await getIdToken(user);
       const response = await fetch(`${RENDER_BACKEND_URL}/createPixOrder`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify({
           orderId: orderRef.id,

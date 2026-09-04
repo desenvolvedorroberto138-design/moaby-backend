@@ -18,12 +18,29 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
 const db = admin.firestore();
 
 const app = express();
-app.use(cors({ origin: true }));
-app.use(express.json());
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)
+  : [];
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.includes(origin)) {
+      callback(null, origin || false);
+    } else {
+      callback(new Error("Origin not allowed by CORS"));
+    }
+  },
+  credentials: true,
+}));
+app.use(express.json({ limit: "1mb" }));
 
-// Pega o token direto da variável de ambiente configurada no Render
-const PAGBANK_TOKEN = process.env.PAGBANK_TOKEN;
+if (!process.env.PAGBANK_TOKEN) {
+  console.warn("PAGBANK_TOKEN não configurado. Pagamentos não funcionarão.");
+}
+
+const PAGBANK_TOKEN = process.env.PAGBANK_TOKEN || "";
 const PAGBANK_BASE_URL = "https://sandbox.api.pagseguro.com";
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || "";
+const PORT = process.env.PORT || 3000;
 
 const PRICES = {
   "Plano de Treino Online": 149.9,
@@ -31,18 +48,73 @@ const PRICES = {
   "Avaliação Física Presencial": 129.9,
 };
 
+const cleanText = (value) => (value || "").replace(/[!@#$%^&*(),.?":{}|<>]/g, "").trim();
+
+const verifyFirebaseToken = async (req, res, next) => {
+  const authHeader = req.headers.authorization || "";
+  const match = authHeader.match(/^Bearer (.+)$/);
+  if (!match) {
+    return res.status(401).json({ error: "Token de autenticação ausente." });
+  }
+  try {
+    const decoded = await admin.auth().verifyIdToken(match[1]);
+    req.user = decoded;
+    next();
+  } catch (err) {
+    console.error("Token inválido:", err.message);
+    return res.status(401).json({ error: "Token inválido ou expirado." });
+  }
+};
+
+const verifyWebhookSecret = (req, res, next) => {
+  const secret = req.headers["x-webhook-secret"] || req.headers["x-webhook-secret".toLowerCase()];
+  if (!WEBHOOK_SECRET) {
+    console.warn("WEBHOOK_SECRET não configurado. Aceitando webhook sem validação.");
+    return next();
+  }
+  if (!secret || secret !== WEBHOOK_SECRET) {
+    return res.status(401).json({ error: "Segredo do webhook inválido." });
+  }
+  next();
+};
+
+const verifyAdmin = async (req, res, next) => {
+  const authHeader = req.headers.authorization || "";
+  const match = authHeader.match(/^Bearer (.+)$/);
+  if (!match) {
+    return res.status(401).json({ error: "Token de autenticação ausente." });
+  }
+  try {
+    const decoded = await admin.auth().verifyIdToken(match[1]);
+    const adminEmails = (process.env.ADMIN_EMAILS || "")
+      .split(",")
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+    if (adminEmails.length > 0 && !adminEmails.includes((decoded.email || "").toLowerCase())) {
+      return res.status(403).json({ error: "Acesso restrito a administradores." });
+    }
+    req.user = decoded;
+    next();
+  } catch (err) {
+    console.error("Admin auth error:", err.message);
+    return res.status(401).json({ error: "Token inválido ou expirado." });
+  }
+};
+
 const buildOrderPayload = (orderId, type, customer, dateScheduled) => {
   const amount = PRICES[type];
   if (!amount) throw new Error(`Serviço inválido: ${type}`);
-  
-  const cleanName = (customer?.name || "Aluno Moaby").replace(/[!@#$%^&*(),.?":{}|<>]/g, "");
+
+  const name = cleanText(customer?.name) || "Aluno Moaby";
+  const email = cleanText(customer?.email) || "aluno@moaby.com";
+  const taxId = process.env.PAGBANK_TAX_ID || "12345678909";
 
   return {
     reference_id: orderId,
     customer: {
-      name: cleanName || "Aluno Moaby",
-      email: customer?.email || "[email protected]",
-      tax_id: "12345678909",
+      name,
+      email,
+      tax_id: taxId,
     },
     items: [{
       reference_id: orderId,
@@ -57,19 +129,40 @@ const buildOrderPayload = (orderId, type, customer, dateScheduled) => {
       expiration_date: new Date(Date.now() + 3600 * 1000).toISOString()
     }],
     notification_urls: [
-      "https://moaby-backend.onrender.com/webhook/pagbank",
+      `${process.env.BACKEND_BASE_URL || PAGBANK_BASE_URL}/webhook/pagbank`,
     ],
     metadata: { dateScheduled: dateScheduled ? new Date(dateScheduled).toISOString() : null },
   };
 };
 
-
-// Rota equivalente ao onCall 'createPixOrder'
-app.post("/createPixOrder", async (req, res) => {
+app.post("/createPixOrder", verifyFirebaseToken, async (req, res) => {
   try {
     const { orderId, type, customer, dateScheduled } = req.body || {};
     if (!orderId || !type) {
       return res.status(400).json({ error: "orderId e type são obrigatórios." });
+    }
+
+    const orderRef = db.collection("orders").doc(orderId);
+    const orderDoc = await orderRef.get();
+
+    if (!orderDoc.exists) {
+      return res.status(404).json({ error: "Pedido não encontrado no banco." });
+    }
+
+    const existingData = orderDoc.data() || {};
+    if (existingData.userId !== req.user.uid) {
+      return res.status(403).json({ error: "Este pedido não pertence ao usuário autenticado." });
+    }
+
+    if (existingData.pagbankOrderId && existingData.qrCode) {
+      return res.status(200).json({
+        ok: true,
+        orderId,
+        pagbankOrderId: existingData.pagbankOrderId,
+        status: existingData.status || "pending",
+        qrCode: existingData.qrCode,
+        qrCodeImage: existingData.qrCodeImage || null,
+      });
     }
 
     const payload = buildOrderPayload(orderId, type, customer, dateScheduled);
@@ -82,7 +175,7 @@ app.post("/createPixOrder", async (req, res) => {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
-        timeout: 15000,
+        timeout: 30000,
       }
     );
 
@@ -93,16 +186,13 @@ app.post("/createPixOrder", async (req, res) => {
       firstQr.links?.[0]?.href ||
       null;
 
-    await db.collection("orders").doc(orderId).set(
-      {
-        pagbankOrderId: data.id,
-        status: data.status || "pending",
-        qrCode: qrCodeText,
-        qrCodeImage,
-        updatedAt: new Date(),
-      },
-      { merge: true }
-    );
+    await orderRef.set({
+      pagbankOrderId: data.id,
+      status: data.status || "pending",
+      qrCode: qrCodeText,
+      qrCodeImage,
+      updatedAt: new Date(),
+    }, { merge: true });
 
     return res.status(200).json({
       ok: true,
@@ -119,8 +209,7 @@ app.post("/createPixOrder", async (req, res) => {
   }
 });
 
-// Webhook do PagBank
-app.post("/webhook/pagbank", async (req, res) => {
+app.post("/webhook/pagbank", verifyWebhookSecret, async (req, res) => {
   try {
     const notification = req.body;
     const charge = notification.charges && notification.charges[0];
@@ -162,7 +251,47 @@ app.post("/webhook/pagbank", async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
+app.get("/admin/orders", verifyAdmin, async (req, res) => {
+  try {
+    const snap = await db.collection("orders").orderBy("createdAt", "desc").get();
+    const orders = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    return res.status(200).json({ orders });
+  } catch (err) {
+    console.error("Erro ao buscar pedidos:", err);
+    return res.status(500).json({ error: "Erro ao buscar pedidos." });
+  }
+});
+
+app.post("/admin/workouts", verifyAdmin, async (req, res) => {
+  try {
+    const { userId, title, content } = req.body || {};
+    if (!userId || !title || !content) {
+      return res.status(400).json({ error: "userId, title e content são obrigatórios." });
+    }
+    const docRef = await db.collection("workouts").add({
+      userId,
+      title,
+      content,
+      createdAt: new Date(),
+    });
+    return res.status(201).json({ id: docRef.id, userId, title, content });
+  } catch (err) {
+    console.error("Erro ao salvar ficha:", err);
+    return res.status(500).json({ error: "Erro ao salvar ficha." });
+  }
+});
+
+app.get("/admin/workouts", verifyAdmin, async (req, res) => {
+  try {
+    const snap = await db.collection("workouts").orderBy("createdAt", "desc").get();
+    const workouts = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    return res.status(200).json({ workouts });
+  } catch (err) {
+    console.error("Erro ao buscar fichas:", err);
+    return res.status(500).json({ error: "Erro ao buscar fichas." });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
