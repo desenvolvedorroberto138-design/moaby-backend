@@ -460,7 +460,18 @@ document.querySelectorAll(".buyBtn").forEach((btn) => {
 
       const result = await response.json();
       if (!response.ok) {
-        throw new Error(result.error || "Erro ao comunicar com o servidor de pagamento.");
+        let errorMsg = result.error || "Erro ao comunicar com o servidor de pagamento.";
+        if (result.details) {
+          if (typeof result.details === "string") {
+            errorMsg += `: ${result.details}`;
+          } else if (result.details.error_messages && Array.isArray(result.details.error_messages)) {
+            const msgs = result.details.error_messages.map((m) => m.description || m.message || JSON.stringify(m)).join("; ");
+            errorMsg += `: ${msgs}`;
+          } else {
+            errorMsg += `: ${JSON.stringify(result.details)}`;
+          }
+        }
+        throw new Error(errorMsg);
       }
 
       buyMsg.className = "text-sm mt-4 text-center font-medium text-emerald-700";

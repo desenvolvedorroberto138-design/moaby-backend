@@ -3,18 +3,27 @@ const admin = require("firebase-admin");
 const axios = require("axios");
 const cors = require("cors");
 
+let adminAppOptions = { projectId: "moabyconsultoria" };
 if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    projectId: "moabyconsultoria"
-  });
+  try {
+    let raw = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
+    if (raw.startsWith("ey") && !raw.startsWith("{")) {
+      raw = Buffer.from(raw, "base64").toString("utf8");
+    }
+    const serviceAccount = JSON.parse(raw);
+    if (serviceAccount.private_key) {
+      serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, "\n");
+    }
+    adminAppOptions.credential = admin.credential.cert(serviceAccount);
+    console.log("Firebase Admin inicializado com credencial de conta de serviço.");
+  } catch (err) {
+    console.error("Falha ao inicializar credenciais de FIREBASE_SERVICE_ACCOUNT:", err.message);
+  }
 } else {
-  admin.initializeApp({
-    projectId: "moabyconsultoria"
-  });
+  console.warn("Aviso: FIREBASE_SERVICE_ACCOUNT não configurado. Operações no Firestore que exigem privilégios podem falhar.");
 }
 
+admin.initializeApp(adminAppOptions);
 const db = admin.firestore();
 
 const app = express();
@@ -118,7 +127,10 @@ const buildOrderPayload = (orderId, type, customer, dateScheduled) => {
   const amount = PRICES[type];
   if (!amount) throw new Error(`Serviço inválido: ${type}`);
 
-  const name = cleanText(customer?.name) || "Aluno Moaby";
+  let name = cleanText(customer?.name) || "Aluno Moaby";
+  if (!name.includes(" ")) {
+    name = `${name} Aluno`;
+  }
   const email = cleanText(customer?.email) || "aluno@moaby.com";
   const taxId = (customer?.taxId || customer?.tax_id || process.env.PAGBANK_TAX_ID || "08197774051").replace(/\D/g, "");
 
@@ -141,8 +153,11 @@ const buildOrderPayload = (orderId, type, customer, dateScheduled) => {
       },
       expiration_date: new Date(Date.now() + 3600 * 1000).toISOString()
     }],
-    metadata: { dateScheduled: dateScheduled ? new Date(dateScheduled).toISOString() : null },
   };
+
+  if (dateScheduled) {
+    payload.metadata = { dateScheduled: new Date(dateScheduled).toISOString() };
+  }
 
   if (BACKEND_BASE_URL) {
     payload.notification_urls = [`${BACKEND_BASE_URL.replace(/\/$/, "")}/webhook/pagbank`];
@@ -160,8 +175,25 @@ app.post("/createPixOrder", verifyFirebaseToken, async (req, res) => {
       return res.status(400).json({ error: "orderId e type são obrigatórios." });
     }
 
+    if (!PAGBANK_TOKEN) {
+      console.error("ERRO: PAGBANK_TOKEN não está configurado nas variáveis de ambiente!");
+      return res.status(500).json({
+        error: "Servidor não configurado",
+        details: "A variável PAGBANK_TOKEN não foi configurada nas variáveis de ambiente do Render."
+      });
+    }
+
     const orderRef = db.collection("orders").doc(orderId);
-    const orderDoc = await orderRef.get();
+    let orderDoc;
+    try {
+      orderDoc = await orderRef.get();
+    } catch (dbErr) {
+      console.error("Erro ao acessar Firestore no backend:", dbErr.message);
+      return res.status(500).json({
+        error: "Erro ao acessar banco de dados",
+        details: `O backend no Render não conseguiu acessar o Firestore: ${dbErr.message}. Certifique-se de que a variável FIREBASE_SERVICE_ACCOUNT está configurada no painel do Render com o JSON da conta de serviço do Firebase.`
+      });
+    }
 
     if (!orderDoc.exists) {
       return res.status(404).json({ error: "Pedido não encontrado no banco." });
@@ -184,18 +216,31 @@ app.post("/createPixOrder", verifyFirebaseToken, async (req, res) => {
     }
 
     const payload = buildOrderPayload(orderId, type, customer, dateScheduled);
-    const { data } = await axios.post(
-      `${PAGBANK_BASE_URL}/orders`,
-      payload,
-      {
-        headers: {
-          Authorization: `Bearer ${PAGBANK_TOKEN}`,
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        timeout: 30000,
-      }
-    );
+    console.log("Enviando pedido ao PagBank:", JSON.stringify(payload, null, 2));
+
+    let data;
+    try {
+      const response = await axios.post(
+        `${PAGBANK_BASE_URL}/orders`,
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${PAGBANK_TOKEN}`,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          timeout: 30000,
+        }
+      );
+      data = response.data;
+    } catch (apiErr) {
+      const details = apiErr.response?.data || apiErr.message;
+      console.error("Erro da API PagBank:", JSON.stringify(details, null, 2));
+      return res.status(apiErr.response?.status || 500).json({
+        error: "Falha na API do PagBank",
+        details
+      });
+    }
 
     const firstQr = data.qr_codes?.[0] || {};
     const qrCodeText = firstQr.text || firstQr.content || null;
@@ -221,9 +266,11 @@ app.post("/createPixOrder", verifyFirebaseToken, async (req, res) => {
       qrCodeImage,
     });
   } catch (err) {
-    const details = err.response?.data || err.message;
-    console.error("PagBank error", details);
-    return res.status(500).json({ error: "Falha ao criar pedido PIX", details });
+    console.error("Erro interno ao criar pedido PIX:", err);
+    return res.status(500).json({
+      error: "Falha interna ao processar pedido",
+      details: err.message
+    });
   }
 });
 
