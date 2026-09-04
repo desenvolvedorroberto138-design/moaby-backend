@@ -15,11 +15,17 @@ const workoutMsg = document.getElementById("workoutMsg");
 
 const BACKEND_URL = "https://moaby-backend.onrender.com";
 
-const parseDate = (val) => {
+function formatarData(val) {
   if (!val) return "-";
-  if (val && typeof val === "object" && val.seconds) return new Date(val.seconds * 1000).toLocaleString("pt-BR");
+  if (val && typeof val === "object" && val.seconds) return new Date(val.seconds * 1000).toLocaleString("pt-BR", {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
   return new Date(val).toLocaleString("pt-BR");
-};
+}
 
 document.getElementById("adminLoginBtn").addEventListener("click", async () => {
   loginMsg.textContent = "";
@@ -83,8 +89,8 @@ async function loadOrders() {
         statusBadge = `<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">Cancelado</span>`;
       }
 
-      const dateScheduled = parseDate(o.dateScheduled);
-      const createdAt = parseDate(o.createdAt);
+      const dateScheduled = formatarData(o.dateScheduled);
+      const createdAt = formatarData(o.createdAt);
 
       tr.innerHTML = `
         <td class="py-3 font-medium text-slate-700">${o.userEmail || o.userId}</td>
@@ -145,7 +151,7 @@ async function loadWorkouts() {
     workouts.forEach((w) => {
       const div = document.createElement("div");
       div.className = "border rounded-lg p-3";
-      const createdAt = parseDate(w.createdAt);
+      const createdAt = formatarData(w.createdAt);
       div.innerHTML = `
         <p class="font-medium">${w.title}</p>
         <p class="text-xs text-slate-500">Aluno: ${w.userId} • ${createdAt}</p>
