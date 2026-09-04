@@ -123,6 +123,33 @@ const verifyAdmin = async (req, res, next) => {
   }
 };
 
+const VALID_TEST_CPF = "11144477735";
+
+const isValidCpf = (cpf) => {
+  if (!cpf) return false;
+  const clean = String(cpf).replace(/\D/g, "");
+  if (clean.length !== 11 || /^(\d)\1{10}$/.test(clean)) return false;
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += parseInt(clean[i], 10) * (10 - i);
+  let rest = 11 - (sum % 11);
+  const d1 = rest >= 10 ? 0 : rest;
+  if (d1 !== parseInt(clean[9], 10)) return false;
+  sum = 0;
+  for (let i = 0; i < 10; i++) sum += parseInt(clean[i], 10) * (11 - i);
+  rest = 11 - (sum % 11);
+  const d2 = rest >= 10 ? 0 : rest;
+  return d2 === parseInt(clean[10], 10);
+};
+
+const getCleanTaxId = (candidate) => {
+  if (!candidate) return null;
+  const onlyDigits = String(candidate).replace(/\D/g, "").trim();
+  if (onlyDigits.length === 11 && isValidCpf(onlyDigits)) {
+    return onlyDigits;
+  }
+  return null;
+};
+
 const buildOrderPayload = (orderId, type, customer, dateScheduled) => {
   const amount = PRICES[type];
   if (!amount) throw new Error(`Serviço inválido: ${type}`);
@@ -132,7 +159,15 @@ const buildOrderPayload = (orderId, type, customer, dateScheduled) => {
     name = `${name} Aluno`;
   }
   const email = cleanText(customer?.email) || "aluno@moaby.com";
-  const taxId = (customer?.taxId || customer?.tax_id || process.env.PAGBANK_TAX_ID || "08197774051").replace(/\D/g, "");
+  
+  // Envia estritamente os 11 dígitos numéricos do CPF, sem pontos ou traços.
+  // Usa CPF de teste matematicamente válido caso nenhum seja informado ou seja inválido.
+  const taxId = getCleanTaxId(customer?.taxId)
+    || getCleanTaxId(customer?.tax_id)
+    || getCleanTaxId(process.env.PAGBANK_TAX_ID)
+    || VALID_TEST_CPF;
+
+  console.log(`[PIX Payload] tax_id utilizado: ${taxId} (somente dígitos: ${/^\d{11}$/.test(taxId)})`);
 
   const payload = {
     reference_id: orderId,
