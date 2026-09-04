@@ -1,0 +1,23 @@
+﻿# Dependencias
+node_modules/
+package-lock.json
+
+# Ambiente e segredos
+.env
+.env.*
+serviceAccountKey.json
+*.pem
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+firebase-debug.log*
+firebase-debug.*.log*
+
+# Sistema e IDEs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.kilo/

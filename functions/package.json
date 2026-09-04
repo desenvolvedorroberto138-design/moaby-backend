@@ -2,7 +2,8 @@
   "name": "functions",
   "description": "Backend para Moaby Consultoria no Render",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "lint": "node -c index.js"
   },
   "dependencies": {
     "axios": "^1.x.x",

@@ -12,27 +12,37 @@ const loginMsg = document.getElementById("loginMsg");
 const ordersTable = document.getElementById("ordersTable");
 const workoutsList = document.getElementById("workoutsList");
 const workoutMsg = document.getElementById("workoutMsg");
+const logoutBtn = document.getElementById("logoutBtn");
 
 const BACKEND_URL = "https://moaby-backend.onrender.com";
 
 function formatarData(val) {
   if (!val) return "-";
-  if (val && typeof val === "object" && val.seconds) return new Date(val.seconds * 1000).toLocaleString("pt-BR", {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
+  if (typeof val === "object" && val.seconds) {
+    return new Date(val.seconds * 1000).toLocaleString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  }
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? "-" : d.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
   });
-  return new Date(val).toLocaleString("pt-BR");
 }
 
-document.getElementById("adminLoginBtn").addEventListener("click", async () => {
+document.getElementById("adminLoginBtn")?.addEventListener("click", async () => {
   loginMsg.textContent = "";
   try {
     await signInWithEmailAndPassword(
       auth,
-      document.getElementById("adminEmail").value,
+      document.getElementById("adminEmail").value.trim(),
       document.getElementById("adminPassword").value
     );
   } catch (err) {
@@ -40,17 +50,19 @@ document.getElementById("adminLoginBtn").addEventListener("click", async () => {
   }
 });
 
-document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth));
+logoutBtn?.addEventListener("click", () => signOut(auth));
 
 onAuthStateChanged(auth, (user) => {
   if (user) {
     loginSection.classList.add("hidden");
     dashboard.classList.remove("hidden");
+    logoutBtn?.classList.remove("hidden");
     loadOrders();
     loadWorkouts();
   } else {
     loginSection.classList.remove("hidden");
     dashboard.classList.add("hidden");
+    logoutBtn?.classList.add("hidden");
   }
 });
 
@@ -65,7 +77,7 @@ async function authHeaders() {
 }
 
 async function loadOrders() {
-  ordersTable.innerHTML = `<tr><td colspan="5" class="py-3 text-slate-500">Carregando...</td></tr>`;
+  ordersTable.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-slate-500">Carregando pedidos...</td></tr>`;
   try {
     const res = await fetch(`${BACKEND_URL}/admin/orders`, { headers: await authHeaders() });
     if (!res.ok) {
@@ -74,7 +86,7 @@ async function loadOrders() {
     }
     const { orders } = await res.json();
     if (!orders || orders.length === 0) {
-      ordersTable.innerHTML = `<tr><td colspan="5" class="py-3 text-slate-500">Nenhum pedido.</td></tr>`;
+      ordersTable.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-slate-500">Nenhum pedido encontrado.</td></tr>`;
       return;
     }
     ordersTable.innerHTML = "";
@@ -93,39 +105,58 @@ async function loadOrders() {
       const createdAt = formatarData(o.createdAt);
 
       tr.innerHTML = `
-        <td class="py-3 font-medium text-slate-700">${o.userEmail || o.userId}</td>
-        <td class="py-3 text-slate-600">${o.type || 'Serviço'}</td>
+        <td class="py-3 font-medium text-slate-700">
+          <div>${o.userEmail || o.userId}</div>
+          <div class="text-xs text-slate-400 font-mono select-all">${o.userId}</div>
+        </td>
+        <td class="py-3 text-slate-600">${o.type || "Serviço"}</td>
         <td class="py-3">${statusBadge}</td>
         <td class="py-3 text-slate-500">${dateScheduled}</td>
-        <td class="py-3 text-slate-500">${createdAt}</td>`;
+        <td class="py-3 text-slate-500">${createdAt}</td>
+        <td class="py-3 text-right">
+          <button class="selectUserBtn bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg transition" title="Preencher este aluno no formulário de treino">
+            Criar Treino
+          </button>
+        </td>`;
+
+      const selectBtn = tr.querySelector(".selectUserBtn");
+      if (selectBtn) {
+        selectBtn.addEventListener("click", () => {
+          const userIdInput = document.getElementById("workoutUserId");
+          const workoutTitleInput = document.getElementById("workoutTitle");
+          if (userIdInput) userIdInput.value = o.userId;
+          if (workoutTitleInput) workoutTitleInput.focus();
+          document.getElementById("workoutForm")?.scrollIntoView({ behavior: "smooth" });
+        });
+      }
 
       ordersTable.appendChild(tr);
     });
   } catch (err) {
-    ordersTable.innerHTML = `<tr><td colspan="5" class="py-3 text-red-600">${err.message}</td></tr>`;
+    ordersTable.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-red-600">${err.message}</td></tr>`;
   }
 }
 
-document.getElementById("workoutForm").addEventListener("submit", async (e) => {
+document.getElementById("workoutForm")?.addEventListener("submit", async (e) => {
   e.preventDefault();
-  workoutMsg.textContent = "Salvando...";
+  workoutMsg.textContent = "Salvando ficha...";
   workoutMsg.className = "ml-3 text-sm text-slate-600";
   try {
-      const res = await fetch(`${BACKEND_URL}/admin/workouts`, {
-        method: "POST",
+    const res = await fetch(`${BACKEND_URL}/admin/workouts`, {
+      method: "POST",
       headers: await authHeaders(),
       body: JSON.stringify({
-        userId: document.getElementById("workoutUserId").value,
-        title: document.getElementById("workoutTitle").value,
-        content: document.getElementById("workoutContent").value,
+        userId: document.getElementById("workoutUserId").value.trim(),
+        title: document.getElementById("workoutTitle").value.trim(),
+        content: document.getElementById("workoutContent").value.trim(),
       }),
     });
     if (!res.ok) {
       const err = await res.json();
       throw new Error(err.error || "Erro ao salvar ficha.");
     }
-    workoutMsg.textContent = "Ficha salva!";
-    workoutMsg.className = "ml-3 text-sm text-emerald-700";
+    workoutMsg.textContent = "Ficha salva com sucesso!";
+    workoutMsg.className = "ml-3 text-sm text-emerald-700 font-medium";
     e.target.reset();
     loadWorkouts();
   } catch (err) {
@@ -135,7 +166,7 @@ document.getElementById("workoutForm").addEventListener("submit", async (e) => {
 });
 
 async function loadWorkouts() {
-  workoutsList.innerHTML = `<p class="text-slate-500 text-sm">Carregando...</p>`;
+  workoutsList.innerHTML = `<p class="text-slate-500 text-sm">Carregando fichas...</p>`;
   try {
     const res = await fetch(`${BACKEND_URL}/admin/workouts`, { headers: await authHeaders() });
     if (!res.ok) {
@@ -150,12 +181,15 @@ async function loadWorkouts() {
     workoutsList.innerHTML = "";
     workouts.forEach((w) => {
       const div = document.createElement("div");
-      div.className = "border rounded-lg p-3";
+      div.className = "border border-slate-200 rounded-xl p-4 bg-slate-50/50";
       const createdAt = formatarData(w.createdAt);
       div.innerHTML = `
-        <p class="font-medium">${w.title}</p>
-        <p class="text-xs text-slate-500">Aluno: ${w.userId} • ${createdAt}</p>
-        <pre class="whitespace-pre-wrap text-sm mt-2 text-slate-700">${w.content}</pre>`;
+        <div class="flex items-center justify-between">
+          <p class="font-bold text-slate-800">${w.title || "Ficha de Treino"}</p>
+          <span class="text-xs text-slate-400">${createdAt}</span>
+        </div>
+        <p class="text-xs text-slate-500 font-mono mt-0.5">Aluno (ID): ${w.userId}</p>
+        <pre class="whitespace-pre-wrap font-sans text-sm mt-3 text-slate-700 bg-white p-3 rounded-lg border border-slate-100">${w.content}</pre>`;
       workoutsList.appendChild(div);
     });
   } catch (err) {

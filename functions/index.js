@@ -24,7 +24,7 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin || ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.includes(origin)) {
-      callback(null, origin || false);
+      callback(null, true);
     } else {
       callback(new Error("Origin not allowed by CORS"));
     }
@@ -33,13 +33,22 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "1mb" }));
 
+app.get("/", (req, res) => {
+  res.status(200).json({ ok: true, message: "Moaby Backend API online", timestamp: new Date() });
+});
+
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "healthy", timestamp: new Date() });
+});
+
 if (!process.env.PAGBANK_TOKEN) {
   console.warn("PAGBANK_TOKEN não configurado. Pagamentos não funcionarão.");
 }
 
 const PAGBANK_TOKEN = process.env.PAGBANK_TOKEN || "";
-const PAGBANK_BASE_URL = "https://sandbox.api.pagseguro.com";
+const PAGBANK_BASE_URL = process.env.PAGBANK_BASE_URL || "https://sandbox.api.pagseguro.com";
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || "";
+const BACKEND_BASE_URL = process.env.BACKEND_BASE_URL || "";
 const PORT = process.env.PORT || 3000;
 
 const PRICES = {
@@ -67,11 +76,15 @@ const verifyFirebaseToken = async (req, res, next) => {
 };
 
 const verifyWebhookSecret = (req, res, next) => {
-  const secret = req.headers["x-webhook-secret"] || req.headers["x-webhook-secret".toLowerCase()];
   if (!WEBHOOK_SECRET) {
-    console.warn("WEBHOOK_SECRET não configurado. Aceitando webhook sem validação.");
+    if (process.env.NODE_ENV === "production") {
+      console.error("ALERTA DE SEGURANÇA: WEBHOOK_SECRET não configurado em ambiente de produção!");
+    } else {
+      console.warn("Aviso: WEBHOOK_SECRET não configurado. Aceitando webhook.");
+    }
     return next();
   }
+  const secret = req.headers["x-webhook-secret"] || req.headers["x-webhook-secret".toLowerCase()];
   if (!secret || secret !== WEBHOOK_SECRET) {
     return res.status(401).json({ error: "Segredo do webhook inválido." });
   }
@@ -107,9 +120,9 @@ const buildOrderPayload = (orderId, type, customer, dateScheduled) => {
 
   const name = cleanText(customer?.name) || "Aluno Moaby";
   const email = cleanText(customer?.email) || "aluno@moaby.com";
-  const taxId = process.env.PAGBANK_TAX_ID || "12345678909";
+  const taxId = (customer?.taxId || customer?.tax_id || process.env.PAGBANK_TAX_ID || "08197774051").replace(/\D/g, "");
 
-  return {
+  const payload = {
     reference_id: orderId,
     customer: {
       name,
@@ -128,11 +141,16 @@ const buildOrderPayload = (orderId, type, customer, dateScheduled) => {
       },
       expiration_date: new Date(Date.now() + 3600 * 1000).toISOString()
     }],
-    notification_urls: [
-      `${process.env.BACKEND_BASE_URL || PAGBANK_BASE_URL}/webhook/pagbank`,
-    ],
     metadata: { dateScheduled: dateScheduled ? new Date(dateScheduled).toISOString() : null },
   };
+
+  if (BACKEND_BASE_URL) {
+    payload.notification_urls = [`${BACKEND_BASE_URL.replace(/\/$/, "")}/webhook/pagbank`];
+  } else {
+    console.warn("Aviso: BACKEND_BASE_URL não configurado. PagBank não enviará notificações de webhook para este pedido.");
+  }
+
+  return payload;
 };
 
 app.post("/createPixOrder", verifyFirebaseToken, async (req, res) => {
