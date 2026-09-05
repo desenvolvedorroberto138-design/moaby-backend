@@ -60,8 +60,6 @@ const cardNumber = document.getElementById("cardNumber");
 const cardExpiry = document.getElementById("cardExpiry");
 const cardCvv = document.getElementById("cardCvv");
 
-let currentCardOrderId = null;
-
 // Formulários
 const loginEmail = document.getElementById("loginEmail");
 const loginPassword = document.getElementById("loginPassword");
