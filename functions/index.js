@@ -127,7 +127,7 @@ const verifyAdmin = async (req, res, next) => {
 };
 
 // ✅ CPF DE TESTE VÁLIDO — SEMPRE USADO SE INVÁLIDO OU VAZIO
-const VALID_TEST_CPF = "46855543008"; // ✅ CPF de teste VÁLIDO
+const VALID_TEST_CPF = "52998224725"; // ✅ CPF de teste VÁLIDO
 
 // ✅ FUNÇÃO CORRIGIDA: LIMPA E SEMPRE RETORNA CPF VÁLIDO
 const normalizeTaxId = (value) => {
