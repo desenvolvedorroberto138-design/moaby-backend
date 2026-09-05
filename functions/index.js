@@ -147,7 +147,12 @@ const buildOrderPayload = (orderId, type, customer, dateScheduled) => {
   if (!name.includes(" ")) {
     name = `${name} Aluno`;
   }
-  const email = cleanText(customer?.email) || "aluno@moaby.com";
+  let email = customer?.email || "aluno@moaby.com";
+  email = email.trim().toLowerCase();
+  email = email.replace(/[<>{}[\]\\\/@#$%^&*()+=`~?;:'"]/g, "");
+  if (!email.includes("@") || email.length < 5) {
+    email = "aluno@moaby.com";
+  }
 
   // ✅ GARANTE SEMPRE CPF COM 11 DÍGITOS — SEM PONTOS, SEM TRAÇOS
   const taxId = normalizeTaxId(customer?.taxId)
