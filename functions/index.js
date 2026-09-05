@@ -127,14 +127,30 @@ const verifyAdmin = async (req, res, next) => {
   }
 };
 
-// ✅ CPF DE TESTE VÁLIDO — SEMPRE USADO SE INVÁLIDO OU VAZIO
-const VALID_TEST_CPF = "52998224725"; // ✅ CPF de teste VÁLIDO
+// ✅ CPF de teste VÁLIDO reconhecido pela PagBank
+const VALID_TEST_CPF = "12345678909";
 
-// ✅ FUNÇÃO CORRIGIDA: LIMPA E SEMPRE RETORNA CPF VÁLIDO
+const isValidCPF = (cpf) => {
+  if (!cpf || cpf.length !== 11) return false;
+  if (/^(\d)\1+$/.test(cpf)) return false;
+
+  let soma = 0;
+  for (let i = 0; i < 9; i++) soma += parseInt(cpf[i], 10) * (10 - i);
+  let digito1 = (soma * 10) % 11;
+  if (digito1 === 10 || digito1 === 11) digito1 = 0;
+  if (digito1 !== parseInt(cpf[9], 10)) return false;
+
+  soma = 0;
+  for (let i = 0; i < 10; i++) soma += parseInt(cpf[i], 10) * (11 - i);
+  let digito2 = (soma * 10) % 11;
+  if (digito2 === 10 || digito2 === 11) digito2 = 0;
+  return digito2 === parseInt(cpf[10], 10);
+};
+
 const normalizeTaxId = (value) => {
   if (!value) return VALID_TEST_CPF;
   const onlyDigits = String(value).replace(/\D/g, "");
-  if (onlyDigits.length === 11) {
+  if (onlyDigits.length === 11 && isValidCPF(onlyDigits)) {
     return onlyDigits;
   }
   return VALID_TEST_CPF;
@@ -161,7 +177,7 @@ const buildOrderPayload = (orderId, type, customer, dateScheduled) => {
     || normalizeTaxId(process.env.PAGBANK_TAX_ID)
     || VALID_TEST_CPF;
 
-  const finalTaxId = taxId && taxId.length === 11 ? taxId : VALID_TEST_CPF;
+  const finalTaxId = isValidCPF(taxId) ? taxId : VALID_TEST_CPF;
   console.log(`[PIX Payload] CPF enviado: ${finalTaxId}`);
 
   const payload = {
