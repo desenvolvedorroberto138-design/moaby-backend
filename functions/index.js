@@ -62,6 +62,7 @@ const PAGBANK_BASE_URL = process.env.PAGBANK_BASE_URL || "https://sandbox.api.pa
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || "";
 const BACKEND_BASE_URL = process.env.BACKEND_BASE_URL || "";
 const PORT = process.env.PORT || 3000;
+const processedNotifications = new Set();
 
 const PRICES = {
   "Plano de Treino Online": 149.9,
@@ -304,19 +305,25 @@ app.post("/createPixOrder", verifyFirebaseToken, async (req, res) => {
     });
   }
 });
-
 app.post("/webhook/pagbank", verifyWebhookSecret, async (req, res) => {
   try {
     const notification = req.body;
     const charge = notification.charges && notification.charges[0];
+
     if (!charge) {
       return res.status(400).send({ error: "Nenhuma cobrança encontrada" });
     }
 
     const orderId = notification.reference_id || charge.reference_id;
     const paymentStatus = charge.status;
+    const notificationId = charge.id || `${orderId}-${paymentStatus}`;
+
     if (!orderId) {
       return res.status(400).send({ error: "ID do pedido não identificado" });
+    }
+
+    if (processedNotifications.has(notificationId)) {
+      return res.status(200).send({ success: true, message: "Notificação já processada" });
     }
 
     let newStatus = "pending";
@@ -328,8 +335,15 @@ app.post("/webhook/pagbank", verifyWebhookSecret, async (req, res) => {
 
     const orderRef = db.collection("orders").doc(orderId);
     const orderDoc = await orderRef.get();
+
     if (!orderDoc.exists) {
       return res.status(404).send({ error: "Pedido não encontrado" });
+    }
+
+    const currentStatus = orderDoc.data()?.status;
+    if (currentStatus === newStatus) {
+      processedNotifications.add(notificationId);
+      return res.status(200).send({ success: true, message: "Status já estava atualizado" });
     }
 
     await orderRef.update({
@@ -337,14 +351,14 @@ app.post("/webhook/pagbank", verifyWebhookSecret, async (req, res) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    return res.status(200).send({ success: true });
+    processedNotifications.add(notificationId);
 
+    return res.status(200).send({ success: true });
   } catch (error) {
     console.error("Erro no webhook:", error);
     return res.status(500).send({ error: "Erro interno" });
   }
 });
-
 app.get("/admin/orders", verifyAdmin, async (req, res) => {
   try {
     const snap = await db.collection("orders").orderBy("createdAt", "desc").get();

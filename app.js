@@ -410,12 +410,18 @@ async function loadMyOrders() {
 
 document.querySelectorAll(".buyBtn").forEach((btn) => {
   btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = "Processando...";
+
     buyMsg.className = "text-sm mt-4 text-center font-medium";
     buyMsg.textContent = "Processando seu pedido...";
     const user = auth.currentUser;
     if (!user) {
       buyMsg.className = "text-sm mt-4 text-center font-medium text-red-600";
       buyMsg.textContent = "Você precisa estar logado para contratar um serviço.";
+      btn.disabled = false;
+      btn.textContent = btn.dataset.buyOriginal || btn.textContent;
       return;
     }
     const type = btn.dataset.buy;
@@ -426,6 +432,8 @@ document.querySelectorAll(".buyBtn").forEach((btn) => {
       if (!input?.value) {
         buyMsg.className = "text-sm mt-4 text-center font-medium text-red-600";
         buyMsg.textContent = "Selecione uma data e horário válidos para agendar.";
+        btn.disabled = false;
+        btn.textContent = btn.dataset.buyOriginal || btn.textContent;
         return;
       }
       dateScheduled = new Date(input.value);
@@ -481,6 +489,9 @@ document.querySelectorAll(".buyBtn").forEach((btn) => {
     } catch (err) {
       buyMsg.className = "text-sm mt-4 text-center font-medium text-red-600";
       buyMsg.textContent = err.message || "Erro ao processar pagamento.";
+    } finally {
+      btn.disabled = false;
+      btn.textContent = btn.dataset.buyOriginal || btn.dataset.buy || "Comprar";
     }
   });
 });
