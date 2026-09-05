@@ -49,6 +49,19 @@ const pixCloseBtn = document.getElementById("pixCloseBtn");
 const pixCopyBtn = document.getElementById("pixCopyBtn");
 const pixSuccessBtn = document.getElementById("pixSuccessBtn");
 
+// Modal Cartão
+const cardModal = document.getElementById("cardModal");
+const cardCloseBtn = document.getElementById("cardCloseBtn");
+const cardForm = document.getElementById("cardForm");
+const cardMsg = document.getElementById("cardMsg");
+const cardOrderId = document.getElementById("cardOrderId");
+const cardName = document.getElementById("cardName");
+const cardNumber = document.getElementById("cardNumber");
+const cardExpiry = document.getElementById("cardExpiry");
+const cardCvv = document.getElementById("cardCvv");
+
+let currentCardOrderId = null;
+
 // Formulários
 const loginEmail = document.getElementById("loginEmail");
 const loginPassword = document.getElementById("loginPassword");
@@ -61,6 +74,31 @@ const resetPassBtn = document.getElementById("resetPassBtn");
 // URL do backend hospedado no Render
 const RENDER_BACKEND_URL = "https://moaby-backend.onrender.com";
 let currentOrderUnsubscribe = null;
+let currentCardOrderId = null;
+let currentCardType = null;
+
+const PAGBANK_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAr+ZqgD892U9/HXsa7XqB
+ZUayPquAfh9xx4iwUbTSUAvTlmiXFQNTp0Bvt/5vK2FhMj39qSv1zi2OuBjvW38q
+1E374nzx6NNBL5JosV0+SDINTlCG0cmigHuBOyWzYmjgca+mtQu4WczCaApNaSuV
+qgb8u7Bd9GCOL4YJotvV5+81frlSwQXralhwRzGhj/A57CGPgGKiuPT+AOGmykI
+GEZsSD9RKkyoKIoc0OS8CPIzdBOtTQCIwrLn2FxI83Clcg55W8gkFSOS6rWNbG5
+qFZWMll6yl02HtunalHmUlRUL66YeGXdMDC2PuRcmZbGO5a/2tbVppW6mfSWG3N
+PRpgwIDAQAB
+-----END PUBLIC KEY-----`;
+
+function encryptCardData(data) {
+  if (typeof JSEncrypt === "undefined") {
+    throw new Error("Biblioteca de criptografia não carregada.");
+  }
+  const encrypt = new JSEncrypt();
+  encrypt.setPublicKey(PAGBANK_PUBLIC_KEY);
+  const encrypted = encrypt.encrypt(JSON.stringify(data));
+  if (!encrypted) {
+    throw new Error("Falha ao criptografar dados do cartão.");
+  }
+  return encrypted;
+}
 
 // Bloqueia agendamento em datas passadas
 try {
@@ -408,6 +446,14 @@ async function loadMyOrders() {
   }
 }
 
+document.querySelectorAll(".paymentMethodSelect").forEach((select) => {
+  const card = select.closest(".bg-white");
+  const btn = card?.querySelector(".buyBtn");
+  select.addEventListener("change", () => {
+    if (btn) btn.dataset.payment = select.value;
+  });
+});
+
 document.querySelectorAll(".buyBtn").forEach((btn) => {
   btn.addEventListener("click", async () => {
     if (btn.disabled) return;
@@ -425,6 +471,7 @@ document.querySelectorAll(".buyBtn").forEach((btn) => {
       return;
     }
     const type = btn.dataset.buy;
+    const paymentMethod = btn.dataset.payment || "pix";
     const needsSchedule = ["Avaliação Física Online", "Avaliação Física Presencial"].includes(type);
     let dateScheduled = null;
     if (needsSchedule) {
@@ -438,6 +485,7 @@ document.querySelectorAll(".buyBtn").forEach((btn) => {
       }
       dateScheduled = new Date(input.value);
     }
+
     try {
       const orderRef = await addDoc(collection(db, "orders"), {
         userId: user.uid,
@@ -447,6 +495,18 @@ document.querySelectorAll(".buyBtn").forEach((btn) => {
         dateScheduled,
         createdAt: serverTimestamp()
       });
+
+      if (paymentMethod === "card") {
+        currentCardOrderId = orderRef.id;
+        currentCardType = type;
+        cardOrderId.textContent = orderRef.id;
+        cardMsg.textContent = "";
+        cardForm.reset();
+        cardModal.classList.remove("hidden");
+        btn.disabled = false;
+        btn.textContent = btn.dataset.buyOriginal || btn.textContent;
+        return;
+      }
 
       const token = await getIdToken(user);
       const response = await fetch(`${RENDER_BACKEND_URL}/createPixOrder`, {
@@ -490,8 +550,76 @@ document.querySelectorAll(".buyBtn").forEach((btn) => {
       buyMsg.className = "text-sm mt-4 text-center font-medium text-red-600";
       buyMsg.textContent = err.message || "Erro ao processar pagamento.";
     } finally {
-      btn.disabled = false;
-      btn.textContent = btn.dataset.buyOriginal || btn.dataset.buy || "Comprar";
+      if (!currentCardOrderId) {
+        btn.disabled = false;
+        btn.textContent = btn.dataset.buyOriginal || btn.dataset.buy || "Comprar";
+      }
     }
   });
+});
+
+cardCloseBtn?.addEventListener("click", () => {
+  cardModal.classList.add("hidden");
+  currentCardOrderId = null;
+  currentCardType = null;
+});
+
+cardForm?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  cardMsg.textContent = "Processando pagamento...";
+  cardMsg.className = "text-xs text-center font-medium text-slate-600";
+  
+  try {
+    const encryptedCard = encryptCardData({
+      name: cardName.value.trim(),
+      number: cardNumber.value.replace(/\s/g, ""),
+      expiry: cardExpiry.value.trim(),
+      cvv: cardCvv.value.trim()
+    });
+
+    const token = await getIdToken(auth.currentUser);
+    const response = await fetch(`${RENDER_BACKEND_URL}/createCardOrder`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        orderId: currentCardOrderId,
+        type: currentCardType,
+        customer: {
+          name: auth.currentUser.displayName || "Aluno Moaby",
+          email: auth.currentUser.email,
+        },
+        cardEncrypted: encryptedCard,
+      }),
+    });
+
+    const result = await response.json();
+    if (!response.ok) {
+      let errorMsg = result.error || "Erro ao processar pagamento com cartão.";
+      if (result.details) {
+        if (typeof result.details === "string") {
+          errorMsg += `: ${result.details}`;
+        } else {
+          errorMsg += `: ${JSON.stringify(result.details)}`;
+        }
+      }
+      throw new Error(errorMsg);
+    }
+
+    cardMsg.className = "text-xs text-center font-medium text-emerald-700";
+    cardMsg.textContent = "Pagamento iniciado! Abrindo página do PagBank...";
+    
+    if (result.paymentLink) {
+      window.open(result.paymentLink, "_blank");
+    }
+
+    cardModal.classList.add("hidden");
+    buyMsg.className = "text-sm mt-4 text-center font-medium text-emerald-700";
+    buyMsg.textContent = "Redirecionando para pagamento...";
+  } catch (err) {
+    cardMsg.className = "text-xs text-center font-medium text-red-600";
+    cardMsg.textContent = err.message || "Erro ao processar pagamento com cartão.";
+  }
 });

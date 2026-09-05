@@ -214,6 +214,59 @@ const buildOrderPayload = (orderId, type, customer, dateScheduled) => {
   return payload;
 };
 
+// ✅ Monta payload para pagamento com cartão de crédito
+const buildCardOrderPayload = (orderId, type, customer, cardEncrypted, dateScheduled) => {
+  const amount = PRICES[type];
+  if (!amount) throw new Error(`Serviço inválido: ${type}`);
+
+  let name = cleanText(customer?.name) || "Aluno Moaby";
+  if (!name.includes(" ")) {
+    name = `${name} Aluno`;
+  }
+  let email = customer?.email || "aluno@moaby.com";
+  email = email.trim().toLowerCase();
+  email = email.replace(/[<>{}[\]\\\/@#$%^&*()+=`~?;:'"]/g, "");
+  if (!email.includes("@") || email.length < 5) {
+    email = "aluno@moaby.com";
+  }
+
+  const taxId = normalizeTaxId(customer?.taxId)
+    || normalizeTaxId(customer?.tax_id)
+    || normalizeTaxId(process.env.PAGBANK_TAX_ID)
+    || VALID_TEST_CPF;
+
+  const finalTaxId = isValidCPF(taxId) ? taxId : VALID_TEST_CPF;
+
+  const payload = {
+    reference_id: orderId,
+    customer: {
+      name,
+      email,
+      tax_id: finalTaxId,
+    },
+    items: [{
+      reference_id: orderId,
+      name: type,
+      quantity: 1,
+      unit_amount: Math.round(amount * 100),
+    }],
+    payment_method: "CREDIT_CARD",
+    card: {
+      encrypted_data: cardEncrypted,
+    },
+  };
+
+  if (dateScheduled) {
+    payload.metadata = { dateScheduled: new Date(dateScheduled).toISOString() };
+  }
+
+  if (BACKEND_BASE_URL) {
+    payload.notification_urls = [`${BACKEND_BASE_URL.replace(/\/$/, "")}/webhook/pagbank`];
+  }
+
+  return payload;
+};
+
 app.post("/createPixOrder", verifyFirebaseToken, async (req, res) => {
   try {
     const { orderId, type, customer, dateScheduled } = req.body || {};
@@ -315,6 +368,109 @@ app.post("/createPixOrder", verifyFirebaseToken, async (req, res) => {
 
   } catch (err) {
     console.error("Erro interno ao criar pedido PIX:", err);
+    return res.status(500).json({
+      error: "Falha interna ao processar pedido",
+      details: err.message
+    });
+  }
+});
+
+// ===================== CARTÃO DE CRÉDITO =====================
+app.post("/createCardOrder", verifyFirebaseToken, async (req, res) => {
+  try {
+    const { orderId, type, customer, cardEncrypted, dateScheduled } = req.body || {};
+
+    if (!orderId || !type) {
+      return res.status(400).json({ error: "orderId e type são obrigatórios." });
+    }
+
+    if (!cardEncrypted) {
+      return res.status(400).json({ error: "Dados do cartão criptografados são obrigatórios." });
+    }
+
+    if (!PAGBANK_TOKEN) {
+      return res.status(500).json({
+        error: "Servidor não configurado",
+        details: "PAGBANK_TOKEN não configurado."
+      });
+    }
+
+    const orderRef = db.collection("orders").doc(orderId);
+    let orderDoc;
+    try {
+      orderDoc = await orderRef.get();
+    } catch (dbErr) {
+      return res.status(500).json({
+        error: "Erro ao acessar banco de dados",
+        details: dbErr.message
+      });
+    }
+
+    if (!orderDoc.exists) {
+      return res.status(404).json({ error: "Pedido não encontrado no banco." });
+    }
+
+    const existingData = orderDoc.data() || {};
+    if (existingData.userId !== req.user.uid) {
+      return res.status(403).json({ error: "Este pedido não pertence ao usuário autenticado." });
+    }
+
+    if (existingData.pagbankOrderId && existingData.paymentMethod === "credit_card") {
+      return res.status(200).json({
+        ok: true,
+        orderId,
+        pagbankOrderId: existingData.pagbankOrderId,
+        status: existingData.status || "pending",
+        paymentLink: existingData.paymentLink || null,
+      });
+    }
+
+    const payload = buildCardOrderPayload(orderId, type, customer, cardEncrypted, dateScheduled);
+    console.log("Enviando pedido cartão ao PagBank:", JSON.stringify(payload, null, 2));
+
+    let data;
+    try {
+      const response = await axios.post(
+        `${PAGBANK_BASE_URL}/orders`,
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${PAGBANK_TOKEN}`,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          timeout: 30000,
+        }
+      );
+      data = response.data;
+    } catch (apiErr) {
+      const details = apiErr.response?.data || apiErr.message;
+      console.error("Erro da API PagBank (cartão):", JSON.stringify(details, null, 2));
+      return res.status(apiErr.response?.status || 500).json({
+        error: "Falha na API do PagBank",
+        details
+      });
+    }
+
+    const paymentLink = data.payment_link || data.links?.find((l) => l.rel === "payment_link")?.href || null;
+
+    await orderRef.set({
+      pagbankOrderId: data.id,
+      status: data.status || "pending",
+      paymentMethod: "credit_card",
+      paymentLink,
+      updatedAt: new Date(),
+    }, { merge: true });
+
+    return res.status(200).json({
+      ok: true,
+      orderId,
+      pagbankOrderId: data.id,
+      status: data.status,
+      paymentLink,
+    });
+  } catch (err) {
+    console.error("Erro interno ao criar pedido cartão:", err);
     return res.status(500).json({
       error: "Falha interna ao processar pedido",
       details: err.message
