@@ -477,7 +477,7 @@ app.post("/createCardOrder", verifyFirebaseToken, async (req, res) => {
     });
   }
 });
-app.post("/webhook/pagbank", verifyWebhookSecret, async (req, res) => {
+app.post("/webhook/pagbank", async (req, res) => {
   try {
     const notification = req.body;
     const charge = notification.charges && notification.charges[0];
