@@ -542,7 +542,30 @@ app.post("/webhook/pagbank", async (req, res) => {
 app.get("/admin/orders", verifyAdmin, async (req, res) => {
   try {
     const snap = await db.collection("orders").orderBy("createdAt", "desc").get();
-    const orders = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    const orders = snap.docs.map((doc) => {
+      const data = doc.data() || {};
+      const normalized = { ...data };
+
+      if (normalized.dateScheduled && typeof normalized.dateScheduled === "object" && Object.prototype.hasOwnProperty.call(normalized.dateScheduled, "_seconds")) {
+        normalized.dateScheduled = {
+          seconds: normalized.dateScheduled._seconds,
+          nanoseconds: normalized.dateScheduled._nanoseconds || 0
+        };
+      }
+
+      if (normalized.createdAt && typeof normalized.createdAt === "object" && Object.prototype.hasOwnProperty.call(normalized.createdAt, "_seconds")) {
+        normalized.createdAt = {
+          seconds: normalized.createdAt._seconds,
+          nanoseconds: normalized.createdAt._nanoseconds || 0
+        };
+      }
+
+      if (!Object.prototype.hasOwnProperty.call(normalized, "location")) {
+        normalized.location = null;
+      }
+
+      return { id: doc.id, ...normalized };
+    });
     return res.status(200).json({ orders });
   } catch (err) {
     console.error("Erro ao buscar pedidos:", err);
