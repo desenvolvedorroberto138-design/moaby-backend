@@ -351,6 +351,7 @@ app.post("/createPixOrder", verifyFirebaseToken, async (req, res) => {
 
     await orderRef.set({
       pagbankOrderId: data.id,
+      reference_id: data.reference_id,
       status: data.status || "pending",
       qrCode: qrCodeText,
       qrCodeImage,
@@ -456,6 +457,7 @@ app.post("/createCardOrder", verifyFirebaseToken, async (req, res) => {
 
     await orderRef.set({
       pagbankOrderId: data.id,
+      reference_id: data.reference_id,
       status: data.status || "pending",
       paymentMethod: "credit_card",
       paymentLink,
