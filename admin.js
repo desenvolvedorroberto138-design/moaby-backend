@@ -46,7 +46,7 @@ function statusBadge(status) {
 function renderOrders(orders) {
   if (!ordersTable) return;
   if (!orders || orders.length === 0) {
-    ordersTable.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-slate-500">Nenhum pedido encontrado.</td></tr>`;
+    ordersTable.innerHTML = `<tr><td colspan="8" class="py-4 text-center text-slate-500">Nenhum pedido encontrado.</td></tr>`;
     return;
   }
   ordersTable.innerHTML = "";
@@ -57,6 +57,19 @@ function renderOrders(orders) {
     const dateScheduled = formatarData(o.dateScheduled);
     const createdAt = formatarData(o.createdAt);
 
+    let scheduleDate = "-";
+    let scheduleTime = "-";
+    if (o.dateScheduled) {
+      const d = o.dateScheduled.seconds ? new Date(o.dateScheduled.seconds * 1000) : new Date(o.dateScheduled);
+      if (!isNaN(d.getTime())) {
+        scheduleDate = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+        scheduleTime = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      }
+    }
+
+    const location = o.location || "-";
+    const locationDisplay = location === "Online" ? "💻 Online" : location;
+
     tr.innerHTML = `
       <td class="py-3 font-medium text-slate-700">
         <div>${o.userEmail || o.userId}</div>
@@ -64,7 +77,9 @@ function renderOrders(orders) {
       </td>
       <td class="py-3 text-slate-600">${o.type || "Serviço"}</td>
       <td class="py-3">${statusBadge(o.status)}</td>
-      <td class="py-3 text-slate-500">${dateScheduled}</td>
+      <td class="py-3 text-slate-500">${scheduleDate}</td>
+      <td class="py-3 text-slate-500">${scheduleTime}</td>
+      <td class="py-3 text-slate-500">${locationDisplay}</td>
       <td class="py-3 text-slate-500">${createdAt}</td>
       <td class="py-3 text-right">
         <button class="selectUserBtn bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg transition" title="Preencher este aluno no formulário de treino">
@@ -88,7 +103,7 @@ function renderOrders(orders) {
 }
 
 async function loadOrders() {
-  ordersTable.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-slate-500">Carregando pedidos...</td></tr>`;
+  ordersTable.innerHTML = `<tr><td colspan="8" class="py-4 text-center text-slate-500">Carregando pedidos...</td></tr>`;
   try {
     const res = await fetch(`${BACKEND_URL}/admin/orders`, { headers: await authHeaders() });
     if (!res.ok) {
@@ -98,7 +113,7 @@ async function loadOrders() {
     const { orders } = await res.json();
     renderOrders(orders);
   } catch (err) {
-    ordersTable.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-red-600">${err.message}</td></tr>`;
+    ordersTable.innerHTML = `<tr><td colspan="8" class="py-4 text-center text-red-600">${err.message}</td></tr>`;
   }
 }
 

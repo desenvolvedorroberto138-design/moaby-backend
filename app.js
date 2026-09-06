@@ -120,7 +120,7 @@ function renderOrders(orders) {
   if (!orders || orders.length === 0) {
     ordersStudentTable.innerHTML = `
       <tr>
-        <td colspan="5" class="p-8 text-center text-slate-500">
+        <td colspan="7" class="p-8 text-center text-slate-500">
           <p class="text-base font-semibold text-slate-700">Nenhum pedido realizado</p>
           <p class="text-xs text-slate-400 mt-1">Assim que você contratar um serviço ou avaliação, o acompanhamento do pedido aparecerá aqui.</p>
         </td>
@@ -135,6 +135,19 @@ function renderOrders(orders) {
     const dateScheduled = formatarData(o.dateScheduled);
     const createdAt = formatarData(o.createdAt);
 
+    let scheduleDate = "-";
+    let scheduleTime = "-";
+    if (o.dateScheduled) {
+      const d = o.dateScheduled.seconds ? new Date(o.dateScheduled.seconds * 1000) : new Date(o.dateScheduled);
+      if (!isNaN(d.getTime())) {
+        scheduleDate = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+        scheduleTime = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      }
+    }
+
+    const location = o.location || "-";
+    const locationDisplay = location === "Online" ? "💻 Online" : location;
+
     let actionBtn = "";
     if (o.status === "pending" && (o.qrCode || o.qrCodeImage)) {
       actionBtn = `<button class="viewPixBtn text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3 py-1.5 rounded-lg shadow-sm transition">Pagar PIX</button>`;
@@ -147,7 +160,9 @@ function renderOrders(orders) {
     tr.innerHTML = `
       <td class="p-4 font-semibold text-slate-800">${o.type || "Serviço"}</td>
       <td class="p-4">${statusBadge(o.status)}</td>
-      <td class="p-4 text-slate-600 text-xs">${dateScheduled}</td>
+      <td class="p-4 text-slate-600 text-xs">${scheduleDate}</td>
+      <td class="p-4 text-slate-600 text-xs">${scheduleTime}</td>
+      <td class="p-4 text-slate-600 text-xs">${locationDisplay}</td>
       <td class="p-4 text-slate-500 text-xs">${createdAt}</td>
       <td class="p-4 text-right">${actionBtn}</td>
     `;
@@ -172,7 +187,7 @@ async function loadMyOrders() {
   if (!user || !ordersStudentTable) return;
 
   ordersStudentTable.innerHTML = `
-    <tr><td colspan="5" class="p-6 text-center text-slate-500">Carregando seus pedidos...</td></tr>`;
+    <tr><td colspan="7" class="p-6 text-center text-slate-500">Carregando seus pedidos...</td></tr>`;
 
   try {
     const q = query(collection(db, "orders"), where("userId", "==", user.uid));
@@ -181,7 +196,7 @@ async function loadMyOrders() {
     if (snap.empty) {
       ordersStudentTable.innerHTML = `
         <tr>
-          <td colspan="5" class="p-8 text-center text-slate-500">
+          <td colspan="7" class="p-8 text-center text-slate-500">
             <p class="text-base font-semibold text-slate-700">Nenhum pedido realizado</p>
             <p class="text-xs text-slate-400 mt-1">Assim que você contratar um serviço ou avaliação, o acompanhamento do pedido aparecerá aqui.</p>
           </td>
@@ -465,6 +480,7 @@ document.querySelectorAll(".buyBtn").forEach((btn) => {
     const paymentMethod = btn.dataset.payment || "pix";
     const needsSchedule = ["Avaliação Física Online", "Avaliação Física Presencial"].includes(type);
     let dateScheduled = null;
+    let location = null;
     if (needsSchedule) {
       const input = document.querySelector(`[data-schedule="${CSS.escape(type)}"]`);
       if (!input?.value) {
@@ -475,6 +491,20 @@ document.querySelectorAll(".buyBtn").forEach((btn) => {
         return;
       }
       dateScheduled = new Date(input.value);
+
+      if (type === "Avaliação Física Presencial") {
+        const locationInput = document.querySelector(`[data-location="${CSS.escape(type)}"]`);
+        location = locationInput?.value || "";
+        if (!location) {
+          buyMsg.className = "text-sm mt-4 text-center font-medium text-red-600";
+          buyMsg.textContent = "Selecione o local da avaliação presencial.";
+          btn.disabled = false;
+          btn.textContent = btn.dataset.buyOriginal || btn.textContent;
+          return;
+        }
+      } else if (type === "Avaliação Física Online") {
+        location = "Online";
+      }
     }
 
     try {
@@ -484,6 +514,7 @@ document.querySelectorAll(".buyBtn").forEach((btn) => {
         type,
         status: "pending",
         dateScheduled,
+        location,
         createdAt: serverTimestamp()
       });
 
