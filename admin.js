@@ -54,9 +54,6 @@ function renderOrders(orders) {
     const tr = document.createElement("tr");
     tr.className = "border-b hover:bg-slate-50/50 transition";
 
-    const dateScheduled = formatarData(o.dateScheduled);
-    const createdAt = formatarData(o.createdAt);
-
     let scheduleDate = "-";
     let scheduleTime = "-";
     if (o.dateScheduled) {
@@ -64,6 +61,14 @@ function renderOrders(orders) {
       if (!isNaN(d.getTime())) {
         scheduleDate = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
         scheduleTime = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      }
+    }
+
+    let createdAtFormatted = "-";
+    if (o.createdAt) {
+      const d = o.createdAt.seconds ? new Date(o.createdAt.seconds * 1000) : new Date(o.createdAt);
+      if (!isNaN(d.getTime())) {
+        createdAtFormatted = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }) + ", " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
       }
     }
 
@@ -80,7 +85,7 @@ function renderOrders(orders) {
       <td class="py-3 text-slate-500">${scheduleDate}</td>
       <td class="py-3 text-slate-500">${scheduleTime}</td>
       <td class="py-3 text-slate-500">${locationDisplay}</td>
-      <td class="py-3 text-slate-500">${createdAt}</td>
+      <td class="py-3 text-slate-500">${createdAtFormatted}</td>
       <td class="py-3 text-right">
         <button class="selectUserBtn bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg transition" title="Preencher este aluno no formulário de treino">
           Criar Treino
