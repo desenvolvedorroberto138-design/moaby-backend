@@ -518,10 +518,16 @@ app.post("/webhook/pagbank", async (req, res) => {
       return res.status(200).send({ success: true, message: "Status já estava atualizado" });
     }
 
-    await orderRef.update({
+    const updateData = {
       status: newStatus,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    };
+
+    if (newStatus === "paid") {
+      updateData.paidAt = admin.firestore.FieldValue.serverTimestamp();
+    }
+
+    await orderRef.update(updateData);
 
     processedNotifications.add(notificationId);
 

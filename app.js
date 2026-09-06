@@ -562,6 +562,24 @@ cardCloseBtn?.addEventListener("click", () => {
   currentCardType = null;
 });
 
+cardNumber?.addEventListener("input", () => {
+  let value = cardNumber.value.replace(/\D/g, "");
+  value = value.replace(/(\d{4})(?=\d)/g, "$1 ");
+  cardNumber.value = value.slice(0, 19);
+});
+
+cardExpiry?.addEventListener("input", () => {
+  let value = cardExpiry.value.replace(/\D/g, "");
+  if (value.length >= 2) {
+    value = value.slice(0, 2) + "/" + value.slice(2, 4);
+  }
+  cardExpiry.value = value;
+});
+
+cardCvv?.addEventListener("input", () => {
+  cardCvv.value = cardCvv.value.replace(/\D/g, "").slice(0, 4);
+});
+
 cardForm?.addEventListener("submit", async (e) => {
   e.preventDefault();
   cardMsg.textContent = "Processando pagamento...";
