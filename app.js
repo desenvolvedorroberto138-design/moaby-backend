@@ -1,4 +1,4 @@
-import { auth, db } from "./firebase.js";
+﻿import { auth, db } from "./firebase.js";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -29,7 +29,6 @@ const userGreeting = document.getElementById("userGreeting");
 const authMsg = document.getElementById("authMsg");
 const buyMsg = document.getElementById("buyMsg");
 
-// Abas do Aluno
 const navServices = document.getElementById("navServices");
 const navWorkouts = document.getElementById("navWorkouts");
 const navOrders = document.getElementById("navOrders");
@@ -38,7 +37,6 @@ const refreshOrdersBtn = document.getElementById("refreshOrdersBtn");
 const workoutsStudentList = document.getElementById("workoutsStudentList");
 const ordersStudentTable = document.getElementById("ordersStudentTable");
 
-// Modal PIX
 const pixModal = document.getElementById("pixModal");
 const pixPendingState = document.getElementById("pixPendingState");
 const pixSuccessState = document.getElementById("pixSuccessState");
@@ -49,7 +47,6 @@ const pixCloseBtn = document.getElementById("pixCloseBtn");
 const pixCopyBtn = document.getElementById("pixCopyBtn");
 const pixSuccessBtn = document.getElementById("pixSuccessBtn");
 
-// Modal Cartão
 const cardModal = document.getElementById("cardModal");
 const cardCloseBtn = document.getElementById("cardCloseBtn");
 const cardForm = document.getElementById("cardForm");
@@ -60,7 +57,6 @@ const cardNumber = document.getElementById("cardNumber");
 const cardExpiry = document.getElementById("cardExpiry");
 const cardCvv = document.getElementById("cardCvv");
 
-// Formulários
 const loginEmail = document.getElementById("loginEmail");
 const loginPassword = document.getElementById("loginPassword");
 const regName = document.getElementById("regName");
@@ -69,7 +65,6 @@ const regPassword = document.getElementById("regPassword");
 const resetEmail = document.getElementById("resetEmail");
 const resetPassBtn = document.getElementById("resetPassBtn");
 
-// URL do backend hospedado no Render
 const RENDER_BACKEND_URL = "https://moaby-backend.onrender.com";
 let currentOrderUnsubscribe = null;
 let currentCardOrderId = null;
@@ -86,24 +81,17 @@ PRpgwIDAQAB
 -----END PUBLIC KEY-----`;
 
 function encryptCardData(data) {
-  if (typeof JSEncrypt === "undefined") {
-    throw new Error("Biblioteca de criptografia não carregada.");
-  }
+  if (typeof JSEncrypt === "undefined") throw new Error("Biblioteca de criptografia não carregada.");
   const encrypt = new JSEncrypt();
   encrypt.setPublicKey(PAGBANK_PUBLIC_KEY);
   const encrypted = encrypt.encrypt(JSON.stringify(data));
-  if (!encrypted) {
-    throw new Error("Falha ao criptografar dados do cartão.");
-  }
+  if (!encrypted) throw new Error("Falha ao criptografar dados do cartão.");
   return encrypted;
 }
 
-// Bloqueia agendamento em datas passadas
 try {
   const nowIsoString = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-  document.querySelectorAll(".scheduleInput").forEach((input) => {
-    input.min = nowIsoString;
-  });
+  document.querySelectorAll(".scheduleInput").forEach((input) => { input.min = nowIsoString; });
 } catch (e) {
   console.warn("Não foi possível definir min no input de data:", e);
 }
@@ -112,21 +100,111 @@ function formatarData(val) {
   if (!val) return "-";
   if (typeof val === "object" && val.seconds) {
     return new Date(val.seconds * 1000).toLocaleString("pt-BR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
+      day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit"
     });
   }
   const d = new Date(val);
   return isNaN(d.getTime()) ? "-" : d.toLocaleString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
+    day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit"
   });
+}
+
+function statusBadge(status) {
+  if (status === "paid") return `<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">Confirmado ✅</span>`;
+  if (status === "cancelled") return `<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">Cancelado</span>`;
+  return `<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">Pendente</span>`;
+}
+
+function renderOrders(orders) {
+  if (!ordersStudentTable) return;
+  if (!orders || orders.length === 0) {
+    ordersStudentTable.innerHTML = `
+      <tr>
+        <td colspan="5" class="p-8 text-center text-slate-500">
+          <p class="text-base font-semibold text-slate-700">Nenhum pedido realizado</p>
+          <p class="text-xs text-slate-400 mt-1">Assim que você contratar um serviço ou avaliação, o acompanhamento do pedido aparecerá aqui.</p>
+        </td>
+      </tr>`;
+    return;
+  }
+  ordersStudentTable.innerHTML = "";
+  orders.forEach((o) => {
+    const tr = document.createElement("tr");
+    tr.className = "hover:bg-slate-50/70 transition";
+
+    const dateScheduled = formatarData(o.dateScheduled);
+    const createdAt = formatarData(o.createdAt);
+
+    let actionBtn = "";
+    if (o.status === "pending" && (o.qrCode || o.qrCodeImage)) {
+      actionBtn = `<button class="viewPixBtn text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3 py-1.5 rounded-lg shadow-sm transition">Pagar PIX</button>`;
+    } else if (o.status === "paid") {
+      actionBtn = `<span class="text-xs text-emerald-700 font-semibold">Liberado</span>`;
+    } else {
+      actionBtn = `<span class="text-xs text-slate-400">-</span>`;
+    }
+
+    tr.innerHTML = `
+      <td class="p-4 font-semibold text-slate-800">${o.type || "Serviço"}</td>
+      <td class="p-4">${statusBadge(o.status)}</td>
+      <td class="p-4 text-slate-600 text-xs">${dateScheduled}</td>
+      <td class="p-4 text-slate-500 text-xs">${createdAt}</td>
+      <td class="p-4 text-right">${actionBtn}</td>
+    `;
+
+    const btn = tr.querySelector(".viewPixBtn");
+    if (btn) {
+      btn.addEventListener("click", () => {
+        showPixModal({
+          qrCodeImage: o.qrCodeImage,
+          qrCode: o.qrCode,
+          orderId: o.id
+        });
+      });
+    }
+
+    ordersStudentTable.appendChild(tr);
+  });
+}
+
+async function loadMyOrders() {
+  const user = auth.currentUser;
+  if (!user || !ordersStudentTable) return;
+
+  ordersStudentTable.innerHTML = `
+    <tr><td colspan="5" class="p-6 text-center text-slate-500">Carregando seus pedidos...</td></tr>`;
+
+  try {
+    const q = query(collection(db, "orders"), where("userId", "==", user.uid));
+    const snap = await getDocs(q);
+
+    if (snap.empty) {
+      ordersStudentTable.innerHTML = `
+        <tr>
+          <td colspan="5" class="p-8 text-center text-slate-500">
+            <p class="text-base font-semibold text-slate-700">Nenhum pedido realizado</p>
+            <p class="text-xs text-slate-400 mt-1">Assim que você contratar um serviço ou avaliação, o acompanhamento do pedido aparecerá aqui.</p>
+          </td>
+        </tr>`;
+      return;
+    }
+
+    const orders = [];
+    snap.forEach((docSnap) => {
+      orders.push({ id: docSnap.id, ...docSnap.data() });
+    });
+
+    orders.sort((a, b) => {
+      const timeA = a.createdAt?.seconds ? a.createdAt.seconds * 1000 : new Date(a.createdAt || 0).getTime();
+      const timeB = b.createdAt?.seconds ? b.createdAt.seconds * 1000 : new Date(b.createdAt || 0).getTime();
+      return timeB - timeA;
+    });
+
+    renderOrders(orders);
+  } catch (err) {
+    console.error("Erro ao carregar pedidos:", err);
+    ordersStudentTable.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-red-600 text-sm">Falha ao carregar pedidos: ${err.message}</td></tr>`;
+  }
 }
 
 function switchTab(tabName) {
@@ -258,7 +336,6 @@ function showPixModal({ qrCodeImage, qrCode, orderId }) {
   pixSuccessState?.classList.add("hidden");
   pixModal.classList.remove("hidden");
 
-  // Escuta confirmação de pagamento em tempo real
   if (orderId) {
     currentOrderUnsubscribe = onSnapshot(doc(db, "orders", orderId), (snap) => {
       if (snap.exists()) {
@@ -357,90 +434,6 @@ async function loadMyWorkouts() {
       <div class="p-6 text-center text-red-600 bg-red-50 rounded-2xl border border-red-100 text-sm">
         Falha ao carregar suas fichas: ${err.message}
       </div>`;
-  }
-}
-
-async function loadMyOrders() {
-  const user = auth.currentUser;
-  if (!user || !ordersStudentTable) return;
-
-  ordersStudentTable.innerHTML = `
-    <tr><td colspan="5" class="p-6 text-center text-slate-500">Carregando seus pedidos...</td></tr>`;
-
-  try {
-    const q = query(collection(db, "orders"), where("userId", "==", user.uid));
-    const snap = await getDocs(q);
-
-    if (snap.empty) {
-      ordersStudentTable.innerHTML = `
-        <tr>
-          <td colspan="5" class="p-8 text-center text-slate-500">
-            <p class="text-base font-semibold text-slate-700">Nenhum pedido realizado</p>
-            <p class="text-xs text-slate-400 mt-1">Assim que você contratar um serviço ou avaliação, o acompanhamento do pedido aparecerá aqui.</p>
-          </td>
-        </tr>`;
-      return;
-    }
-
-    const orders = [];
-    snap.forEach((docSnap) => {
-      orders.push({ id: docSnap.id, ...docSnap.data() });
-    });
-
-    orders.sort((a, b) => {
-      const timeA = a.createdAt?.seconds ? a.createdAt.seconds * 1000 : new Date(a.createdAt || 0).getTime();
-      const timeB = b.createdAt?.seconds ? b.createdAt.seconds * 1000 : new Date(b.createdAt || 0).getTime();
-      return timeB - timeA;
-    });
-
-    ordersStudentTable.innerHTML = "";
-    orders.forEach((o) => {
-      const tr = document.createElement("tr");
-      tr.className = "hover:bg-slate-50/70 transition";
-
-      let statusBadge = `<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">Pendente</span>`;
-      if (o.status === "paid") {
-        statusBadge = `<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">Confirmado ✅</span>`;
-      } else if (o.status === "cancelled") {
-        statusBadge = `<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">Cancelado</span>`;
-      }
-
-      const dateScheduled = formatarData(o.dateScheduled);
-      const createdAt = formatarData(o.createdAt);
-
-      let actionBtn = "";
-      if (o.status === "pending" && (o.qrCode || o.qrCodeImage)) {
-        actionBtn = `<button class="viewPixBtn text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3 py-1.5 rounded-lg shadow-sm transition">Pagar PIX</button>`;
-      } else if (o.status === "paid") {
-        actionBtn = `<span class="text-xs text-emerald-700 font-semibold">Liberado</span>`;
-      } else {
-        actionBtn = `<span class="text-xs text-slate-400">-</span>`;
-      }
-
-      tr.innerHTML = `
-        <td class="p-4 font-semibold text-slate-800">${o.type || "Serviço"}</td>
-        <td class="p-4">${statusBadge}</td>
-        <td class="p-4 text-slate-600 text-xs">${dateScheduled}</td>
-        <td class="p-4 text-slate-500 text-xs">${createdAt}</td>
-        <td class="p-4 text-right">${actionBtn}</td>
-      `;
-
-      const btn = tr.querySelector(".viewPixBtn");
-      if (btn) {
-        btn.addEventListener("click", () => {
-          showPixModal({
-            qrCodeImage: o.qrCodeImage,
-            qrCode: o.qrCode,
-            orderId: o.id
-          });
-        });
-      }
-
-      ordersStudentTable.appendChild(tr);
-    });
-  } catch (err) {
-    console.error("Erro ao carregar pedidos:", err);
-    ordersStudentTable.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-red-600 text-sm">Falha ao carregar pedidos: ${err.message}</td></tr>`;
   }
 }
 

@@ -1,16 +1,10 @@
-import { auth } from "./firebase.js";
+﻿import { auth } from "./firebase.js";
 import {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
   getIdToken
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {
-  collection,
-  query,
-  orderBy,
-  onSnapshot
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const loginSection = document.getElementById("loginSection");
 const dashboard = document.getElementById("dashboard");
@@ -21,7 +15,6 @@ const workoutMsg = document.getElementById("workoutMsg");
 const logoutBtn = document.getElementById("logoutBtn");
 
 const BACKEND_URL = "https://moaby-backend.onrender.com";
-let ordersUnsubscribe = null;
 
 function formatarData(val) {
   if (!val) return "-";
@@ -45,12 +38,8 @@ function formatarData(val) {
 }
 
 function statusBadge(status) {
-  if (status === "paid") {
-    return `<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">✅ PAGO</span>`;
-  }
-  if (status === "cancelled") {
-    return `<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">❌ Cancelado</span>`;
-  }
+  if (status === "paid") return `<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">✅ PAGO</span>`;
+  if (status === "cancelled") return `<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">❌ Cancelado</span>`;
   return `<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">⏳ Pendente</span>`;
 }
 
@@ -98,34 +87,7 @@ function renderOrders(orders) {
   });
 }
 
-function listenOrdersRealtime() {
-  if (ordersUnsubscribe) {
-    ordersUnsubscribe();
-    ordersUnsubscribe = null;
-  }
-
-  if (!auth.currentUser) return;
-
-  try {
-    const q = query(collection(db, "orders"), orderBy("createdAt", "desc"));
-    ordersUnsubscribe = onSnapshot(q, (snapshot) => {
-      const orders = [];
-      snapshot.forEach((doc) => {
-        orders.push({ id: doc.id, ...doc.data() });
-      });
-      renderOrders(orders);
-    }, (err) => {
-      console.warn("Erro ao escutar pedidos em tempo real:", err);
-      loadOrdersFallback();
-    });
-  } catch (err) {
-    console.warn("onSnapshot não disponível para admin, usando fallback:", err);
-    loadOrdersFallback();
-  }
-}
-
-async function loadOrdersFallback() {
-  if (ordersUnsubscribe) return;
+async function loadOrders() {
   ordersTable.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-slate-500">Carregando pedidos...</td></tr>`;
   try {
     const res = await fetch(`${BACKEND_URL}/admin/orders`, { headers: await authHeaders() });
@@ -140,17 +102,7 @@ async function loadOrdersFallback() {
   }
 }
 
-async function loadOrders() {
-  listenOrdersRealtime();
-}
-
-document.getElementById("refreshOrdersBtn")?.addEventListener("click", () => {
-  if (ordersUnsubscribe) {
-    ordersUnsubscribe();
-    ordersUnsubscribe = null;
-  }
-  listenOrdersRealtime();
-});
+document.getElementById("refreshOrdersBtn")?.addEventListener("click", loadOrders);
 
 document.getElementById("adminLoginBtn")?.addEventListener("click", async () => {
   loginMsg.textContent = "";
@@ -175,10 +127,6 @@ onAuthStateChanged(auth, (user) => {
     loadOrders();
     loadWorkouts();
   } else {
-    if (ordersUnsubscribe) {
-      ordersUnsubscribe();
-      ordersUnsubscribe = null;
-    }
     loginSection.classList.remove("hidden");
     dashboard.classList.add("hidden");
     logoutBtn?.classList.add("hidden");
