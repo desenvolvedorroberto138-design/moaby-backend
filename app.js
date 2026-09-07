@@ -631,6 +631,7 @@ cardForm?.addEventListener("submit", async (e) => {
           name: auth.currentUser.displayName || "Aluno Moaby",
           email: auth.currentUser.email,
         },
+        holderName: cardName.value.trim(),
         cardEncrypted: encryptedCard,
       }),
     });

@@ -215,7 +215,7 @@ const buildOrderPayload = (orderId, type, customer, dateScheduled) => {
 };
 
 // ✅ Monta payload para pagamento com cartão de crédito
-const buildCardOrderPayload = (orderId, type, customer, cardEncrypted, dateScheduled) => {
+const buildCardOrderPayload = (orderId, type, customer, cardEncrypted, dateScheduled, holderName) => {
   const amount = PRICES[type];
   if (!amount) throw new Error(`Serviço inválido: ${type}`);
 
@@ -237,6 +237,8 @@ const buildCardOrderPayload = (orderId, type, customer, cardEncrypted, dateSched
 
   const finalTaxId = isValidCPF(taxId) ? taxId : VALID_TEST_CPF;
 
+  const cardHolderName = (holderName || name).replace(/[!@#$%^&*(),.?":{}|<>]/g, "").trim() || "CLIENTE MOABY";
+
   const payload = {
     reference_id: orderId,
     customer: {
@@ -250,9 +252,21 @@ const buildCardOrderPayload = (orderId, type, customer, cardEncrypted, dateSched
       quantity: 1,
       unit_amount: Math.round(amount * 100),
     }],
-    payment_method: "CREDIT_CARD",
+    payment_method: {
+      type: "CREDIT_CARD",
+      installments: 1,
+    },
+    payment_instruction: {
+      redirect: {
+        return_url: process.env.PAYMENT_RETURN_URL || "https://moabyconsultoria.com.br/obrigado",
+        cancel_url: process.env.PAYMENT_CANCEL_URL || "https://moabyconsultoria.com.br/cancelado",
+      },
+    },
     card: {
       encrypted_data: cardEncrypted,
+      holder: {
+        name: cardHolderName,
+      },
     },
   };
 
@@ -260,9 +274,8 @@ const buildCardOrderPayload = (orderId, type, customer, cardEncrypted, dateSched
     payload.metadata = { dateScheduled: new Date(dateScheduled).toISOString() };
   }
 
-  if (BACKEND_BASE_URL) {
-    payload.notification_urls = [`${BACKEND_BASE_URL.replace(/\/$/, "")}/webhook/pagbank`];
-  }
+  const webhookUrl = (BACKEND_BASE_URL || "https://moaby-backend.onrender.com").replace(/\/$/, "") + "/webhook/pagbank";
+  payload.notification_urls = [webhookUrl];
 
   return payload;
 };
@@ -379,7 +392,7 @@ app.post("/createPixOrder", verifyFirebaseToken, async (req, res) => {
 // ===================== CARTÃO DE CRÉDITO =====================
 app.post("/createCardOrder", verifyFirebaseToken, async (req, res) => {
   try {
-    const { orderId, type, customer, cardEncrypted, dateScheduled } = req.body || {};
+    const { orderId, type, customer, cardEncrypted, holderName, dateScheduled } = req.body || {};
 
     if (!orderId || !type) {
       return res.status(400).json({ error: "orderId e type são obrigatórios." });
@@ -426,7 +439,7 @@ app.post("/createCardOrder", verifyFirebaseToken, async (req, res) => {
       });
     }
 
-    const payload = buildCardOrderPayload(orderId, type, customer, cardEncrypted, dateScheduled);
+    const payload = buildCardOrderPayload(orderId, type, customer, cardEncrypted, dateScheduled, holderName);
     console.log("Enviando pedido cartão ao PagBank:", JSON.stringify(payload, null, 2));
 
     let data;
